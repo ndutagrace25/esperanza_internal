@@ -4,11 +4,11 @@ import * as employeeService from "../services/employeeService.js";
 export async function getAll(req: Request, res: Response): Promise<void> {
   try {
     // Get pagination parameters from query string
-    const page = req.query.page
-      ? parseInt(req.query.page as string, 10)
+    const page = req.query["page"]
+      ? parseInt(req.query["page"] as string, 10)
       : undefined;
-    const limit = req.query.limit
-      ? parseInt(req.query.limit as string, 10)
+    const limit = req.query["limit"]
+      ? parseInt(req.query["limit"] as string, 10)
       : undefined;
 
     // Validate pagination parameters
@@ -24,7 +24,10 @@ export async function getAll(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const result = await employeeService.findAll({ page, limit });
+    const result = await employeeService.findAll({
+      ...(page !== undefined && { page }),
+      ...(limit !== undefined && { limit }),
+    });
     res.json(result);
   } catch (error) {
     console.error("Error fetching employees:", error);
@@ -56,10 +59,7 @@ export async function getById(req: Request, res: Response): Promise<void> {
 
 export async function create(req: Request, res: Response): Promise<void> {
   try {
-    const employee = await employeeService.create(
-      req.body,
-      req.employee?.id
-    );
+    const employee = await employeeService.create(req.body, req.employee?.id);
     res.status(201).json(employee);
   } catch (error) {
     console.error("Error creating employee:", error);
