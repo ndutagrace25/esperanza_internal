@@ -1,0 +1,62 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Note: url property is valid for Prisma 6 (we're using 6.19.0)
+  url      = env("DATABASE_URL")
+}
+
+model Role {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  employees Employee[]
+
+  @@map("roles")
+}
+
+model Employee {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  firstName String
+  lastName  String
+  position  String?
+  department String?
+  phone     String?
+  password  String
+  tempPassword String?
+  tempPasswordExpiresAt DateTime?
+  roleId    String?
+  role      Role?    @relation(fields: [roleId], references: [id])
+  hireDate  DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  systemLogs SystemLog[]
+
+  @@map("employees")
+}
+
+model SystemLog {
+  id          String   @id @default(cuid())
+  action      String   // CREATE, UPDATE, DELETE, etc.
+  entityType  String   // e.g., "Employee", "Role"
+  entityId    String   // ID of the entity being acted upon
+  performedBy String?  // Employee ID who performed the action
+  employee    Employee? @relation(fields: [performedBy], references: [id])
+  oldData     String?  // JSON string of data before change (for UPDATE/DELETE)
+  newData     String?  // JSON string of data after change (for CREATE/UPDATE)
+  metadata    String?  // JSON string for additional info (IP, user agent, etc.)
+  createdAt   DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([performedBy])
+  @@index([createdAt])
+  @@map("system_logs")
+}
+
