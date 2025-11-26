@@ -1,10 +1,23 @@
 import express from "express";
+import cors from "cors";
 import { env } from "./config/env.js";
 import routes from "./routes/index.js";
 
 const app = express();
 
+// CORS configuration
+const corsOptions = {
+  origin:
+    env.NODE_ENV === "production"
+      ? process.env["CORS_ORIGIN"]?.split(",") || "*" // Allow specific origins in production
+      : true, // Allow all origins in development
+  credentials: true, // Allow cookies/auth headers
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
 // Middleware
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
