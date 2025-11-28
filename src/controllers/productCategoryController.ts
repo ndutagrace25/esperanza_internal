@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import * as productCategoryService from "../services/productCategoryService.js";
 
-export async function getAll(req: Request, res: Response): Promise<void> {
+export async function getAll(_req: Request, res: Response): Promise<void> {
   try {
     const categories = await productCategoryService.findAll();
     res.json(categories);
@@ -99,4 +99,3 @@ export async function deleteProductCategory(
     res.status(400).json({ error: errorMessage });
   }
 }
-
