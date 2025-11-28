@@ -282,7 +282,7 @@ export async function update(
   if (alternatePhone !== undefined && typeof alternatePhone === "string") {
     updateData.alternatePhone = cleanPhone(alternatePhone);
   } else if (alternatePhone !== undefined) {
-    // If it's a Prisma operation object, pass it through as is
+    // If it's a Prisma operation object, pass it through as is .
     updateData.alternatePhone = alternatePhone;
   }
 
