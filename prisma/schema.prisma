@@ -104,3 +104,55 @@ enum ClientStatus {
   archived
 }
 
+model ProductCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  status      ProductCategoryStatus @default(active)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  products    Product[]
+
+  @@map("product_categories")
+  @@index([status])
+}
+
+enum ProductCategoryStatus {
+  active
+  inactive
+  archived
+}
+
+model Product {
+  id              String            @id @default(cuid())
+  name            String
+  description     String?
+  sku             String?           @unique // Stock Keeping Unit
+  barcode         String?           @unique // Barcode/EAN
+  categoryId      String?
+  category        ProductCategory?  @relation(fields: [categoryId], references: [id])
+  stockQuantity   Int?              // Current stock quantity
+  minStockLevel   Int?              // Minimum stock level for reorder alerts
+  unit            String?           // Unit of measurement (e.g., "piece", "kg", "liter", "box")
+  status          ProductStatus     @default(active)
+  imageUrl        String?           // Product image URL
+  supplier        String?           // Supplier name
+  supplierContact String?           // Supplier contact information
+  notes           String?           // Additional notes
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@map("products")
+  @@index([categoryId])
+  @@index([status])
+  @@index([sku])
+  @@index([barcode])
+}
+
+enum ProductStatus {
+  active
+  inactive
+  discontinued
+  out_of_stock
+}
+

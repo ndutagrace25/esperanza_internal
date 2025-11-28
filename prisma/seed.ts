@@ -63,6 +63,32 @@ async function main() {
   console.log("🔑 Temporary password:", tempPassword);
   console.log("⏰ Password expires at:", tempPasswordExpiresAt.toISOString());
 
+  console.log("🌱 Seeding product categories...");
+
+  const categories = [
+    "Software",
+    "Service",
+    "Printers",
+    "Locks",
+    "Laptop",
+    "Point of Sale",
+    "Desktop",
+  ];
+
+  for (const categoryName of categories) {
+    const category = await prisma.productCategory.upsert({
+      where: { name: categoryName },
+      update: {},
+      create: {
+        name: categoryName,
+        status: "active",
+      },
+    });
+    console.log(
+      `✅ Created/Updated category: ${category.name} (${category.id})`
+    );
+  }
+
   console.log("🎉 Seeding completed!");
 }
 
