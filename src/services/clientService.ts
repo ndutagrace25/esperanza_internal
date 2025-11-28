@@ -1,6 +1,7 @@
 import { prisma } from "../lib/prisma.js";
 import type { Client, Prisma } from "@prisma/client";
 import { createLog } from "./systemLogService.js";
+import cleanPhone from "../utils/cleanPhone.js";
 
 export type CreateClientData = Omit<
   Prisma.ClientCreateInput,
@@ -177,10 +178,17 @@ export async function create(
   data: CreateClientData,
   performedBy?: string
 ): Promise<Client> {
-  const { assignedToId, broughtInById, ...clientData } = data;
+  const { assignedToId, broughtInById, phone, alternatePhone, ...clientData } =
+    data;
+
+  // Clean phone numbers if provided
+  const cleanedPhone = cleanPhone(phone);
+  const cleanedAlternatePhone = cleanPhone(alternatePhone);
 
   const createData: Prisma.ClientCreateInput = {
     ...clientData,
+    phone: cleanedPhone,
+    alternatePhone: cleanedAlternatePhone,
   };
 
   if (assignedToId) {
@@ -257,11 +265,26 @@ export async function update(
     },
   });
 
-  const { assignedToId, broughtInById, ...clientData } = data;
+  const { assignedToId, broughtInById, phone, alternatePhone, ...clientData } =
+    data;
 
   const updateData: Prisma.ClientUpdateInput = {
     ...clientData,
   };
+
+  // Clean phone numbers if provided (check if they're strings, not Prisma operation objects)
+  if (phone !== undefined && typeof phone === "string") {
+    updateData.phone = cleanPhone(phone);
+  } else if (phone !== undefined) {
+    // If it's a Prisma operation object, pass it through as is
+    updateData.phone = phone;
+  }
+  if (alternatePhone !== undefined && typeof alternatePhone === "string") {
+    updateData.alternatePhone = cleanPhone(alternatePhone);
+  } else if (alternatePhone !== undefined) {
+    // If it's a Prisma operation object, pass it through as is
+    updateData.alternatePhone = alternatePhone;
+  }
 
   if (assignedToId !== undefined) {
     if (assignedToId === null) {

@@ -2,6 +2,7 @@ import { prisma } from "../lib/prisma.js";
 import type { Employee, Prisma } from "@prisma/client";
 import { createLog } from "./systemLogService.js";
 import { generateTempPassword, hashPassword } from "../utils/password.js";
+import cleanPhone from "../utils/cleanPhone.js";
 
 export type CreateEmployeeData = Omit<
   Prisma.EmployeeCreateInput,
@@ -153,8 +154,12 @@ export async function create(
   const tempPasswordExpiresAt = new Date();
   tempPasswordExpiresAt.setDate(tempPasswordExpiresAt.getDate() + 7);
 
+  // Clean phone number if provided
+  const cleanedPhone = cleanPhone(employeeData.phone);
+
   const createData: Prisma.EmployeeCreateInput = {
     ...employeeData,
+    phone: cleanedPhone,
     password: hashedPassword,
     tempPassword: tempPassword,
     tempPasswordExpiresAt: tempPasswordExpiresAt,
@@ -196,11 +201,19 @@ export async function update(
     include: { role: true },
   });
 
-  const { roleId, ...employeeData } = data;
+  const { roleId, phone, ...employeeData } = data;
 
   const updateData: Prisma.EmployeeUpdateInput = {
     ...employeeData,
   };
+
+  // Clean phone number if provided (check if it's a string, not a Prisma operation object)
+  if (phone !== undefined && typeof phone === "string") {
+    updateData.phone = cleanPhone(phone);
+  } else if (phone !== undefined) {
+    // If it's a Prisma operation object, pass it through as is
+    updateData.phone = phone;
+  }
 
   if (roleId !== undefined) {
     if (roleId === null) {
