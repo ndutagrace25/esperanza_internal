@@ -41,6 +41,7 @@ model Employee {
   systemLogs SystemLog[]
   assignedClients Client[]  // Clients assigned to this employee
   broughtInClients Client[] @relation("EmployeeToClient")
+  jobCards JobCard[] @relation("JobCardsCreated")
 
   @@map("employees")
 }
@@ -91,6 +92,7 @@ model Client {
   assignedTo      Employee?     @relation(fields: [assignedToId], references: [id])
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+  jobCards        JobCard[]
 
   @@map("clients")
   @@index([status])
@@ -155,4 +157,130 @@ enum ProductStatus {
   discontinued
   out_of_stock
 }
+
+model JobCard {
+  id              String            @id @default(cuid())
+  jobNumber       String            @unique  // e.g. "JC-2025-001"
+  visitDate       DateTime          // main visit date
+  clientId        String            // Changed from Int to String to match Client.id
+  client          Client            @relation(fields: [clientId], references: [id])
+
+  location        String?           // override client default location if needed
+  contactPerson   String?
+  purpose         String?           // e.g. "POS Training + Printer Setup" (made optional)
+
+  // Estimated fields
+  estimatedDuration Int?            // estimated duration in minutes
+  estimatedCost     Decimal?        @db.Decimal(10, 2) // estimated cost
+
+  startTime       DateTime?         // visit start time
+  endTime         DateTime?         // visit end time
+
+  workSummary     String?           // overall work done summary (optional, tasks hold details)
+  findings        String?           // findings text
+  recommendations String?           // recommendations text
+
+  status          JobCardStatus     @default(PENDING_CLIENT_CONFIRMATION)
+
+  // Audit trail timestamps
+  completedAt     DateTime?         // when job card was completed
+  cancelledAt     DateTime?         // when job card was cancelled
+
+  // Relations
+  tasks           JobTask[]
+  expenses        JobExpense[]
+  approvals       JobCardApproval[]
+
+  // Which staff created / handled this job card
+  supportStaffId  String?           // Changed from Int to String to match Employee.id
+  supportStaff    Employee?     @relation("JobCardsCreated", fields: [supportStaffId], references: [id])
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([visitDate])
+  @@index([clientId])
+  @@index([status])
+}
+
+/// Individual tasks / activities done during visit
+model JobTask {
+  id          String     @id @default(cuid())
+  jobCardId   String
+  jobCard     JobCard    @relation(fields: [jobCardId], references: [id])
+
+  // Optional categorisation fields
+  moduleName  String?    // e.g. "POS", "Inventory", "Reservations"
+  taskType    String?    // e.g. "Training", "Setup", "Bug Fix", "Configuration"
+
+  description String     // e.g. "Trained staff on POS sales flow"
+  startTime   DateTime?
+  endTime     DateTime?
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([jobCardId])
+}
+
+/// Expenses per job card, dynamic by type/category
+model JobExpense {
+  id              String     @id @default(cuid())
+  jobCardId       String
+  jobCard         JobCard    @relation(fields: [jobCardId], references: [id])
+
+  // Fully dynamic – you can store any label here e.g. "Transport", "Lunch", "Parking"
+  category        String     // free text
+  description     String?    // extra details if needed
+  amount          Decimal    @db.Decimal(10, 2)
+  hasReceipt      Boolean    @default(false)
+  receiptUrl      String?    // if you decide to upload receipt image later
+
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([jobCardId])
+}
+
+/// Flexible approval / signature flow
+/// You can store client, support staff, supervisor, finance approvals here
+model JobCardApproval {
+  id          String             @id @default(cuid())
+  jobCardId   String
+  jobCard     JobCard            @relation(fields: [jobCardId], references: [id])
+
+  role        ApprovalRole       // e.g. CLIENT, SUPPORT_STAFF, SUPERVISOR, FINANCE
+  approverName String?           // e.g. "John", "Grace"
+  approverTitle String?          // e.g. "Manager", "Support Engineer"
+  comment     String?            // optional note e.g. "Training completed successfully"
+  signedAt    DateTime?          // null until actually signed/approved
+  signatureType SignatureType?   // e.g. ON_PAPER, DIGITAL
+
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([jobCardId])
+  @@index([role])
+}
+
+/// Job card lifecycle
+enum JobCardStatus {
+  DRAFT
+  PENDING_CLIENT_CONFIRMATION
+  COMPLETED
+  CANCELLED
+}
+
+/// Who is approving
+enum ApprovalRole {
+  CLIENT
+  DIRECTOR
+}
+
+/// How the approval was captured (optional, but nice for future)
+enum SignatureType {
+  ON_PAPER
+  DIGITAL
+}
+
 
