@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import * as employeeService from "../services/employeeService.js";
+import { validateCanModifyEmployee } from "../utils/permissions.js";
 
 export async function getAll(req: Request, res: Response): Promise<void> {
   try {
@@ -75,6 +76,10 @@ export async function update(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    // Check if current user can modify this employee
+    // (Directors cannot modify other directors)
+    await validateCanModifyEmployee(req, id);
+
     const employee = await employeeService.update(
       id,
       req.body,
@@ -83,7 +88,10 @@ export async function update(req: Request, res: Response): Promise<void> {
     res.json(employee);
   } catch (error) {
     console.error("Error updating employee:", error);
-    res.status(400).json({ error: "Failed to update employee" });
+    const errorMessage =
+      error instanceof Error ? error.message : "Failed to update employee";
+    const statusCode = errorMessage.includes("Forbidden") ? 403 : 400;
+    res.status(statusCode).json({ error: errorMessage });
   }
 }
 
@@ -98,10 +106,17 @@ export async function deleteEmployee(
       return;
     }
 
-    await employeeService.deleteEmployee(id, req.employee?.id);
-    res.status(204).send();
+    // Check if current user can modify this employee
+    // (Directors cannot delete/terminate other directors)
+    await validateCanModifyEmployee(req, id);
+
+    const employee = await employeeService.deleteEmployee(id, req.employee?.id);
+    res.json(employee);
   } catch (error) {
-    console.error("Error deleting employee:", error);
-    res.status(400).json({ error: "Failed to delete employee" });
+    console.error("Error terminating employee:", error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Failed to terminate employee";
+    const statusCode = errorMessage.includes("Forbidden") ? 403 : 400;
+    res.status(statusCode).json({ error: errorMessage });
   }
 }

@@ -9,6 +9,7 @@ declare global {
       employee?: {
         id: string;
         email: string;
+        roleName?: string | null;
       };
     }
   }
@@ -55,10 +56,11 @@ export async function authenticate(
       return;
     }
 
-    // Attach employee info to request
+    // Attach employee info to request (including role)
     req.employee = {
       id: employee.id,
       email: employee.email,
+      roleName: employee.role?.name || null,
     };
 
     next();

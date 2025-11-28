@@ -47,6 +47,7 @@ type EmployeeWithoutPassword = {
     createdAt: Date;
     updatedAt: Date;
   } | null;
+  status: string;
   hireDate: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -59,11 +60,22 @@ export async function findAll(
   const limit = options.limit ?? 10;
   const skip = (page - 1) * limit;
 
-  // Get total count
-  const total = await prisma.employee.count();
+  // Get total count (excluding terminated)
+  const total = await prisma.employee.count({
+    where: {
+      status: {
+        not: "terminated",
+      },
+    },
+  });
 
-  // Get paginated employees
+  // Get paginated employees (excluding terminated by default)
   const employees = await prisma.employee.findMany({
+    where: {
+      status: {
+        not: "terminated",
+      },
+    },
     select: {
       id: true,
       email: true,
@@ -81,6 +93,7 @@ export async function findAll(
           updatedAt: true,
         },
       },
+      status: true,
       hireDate: true,
       createdAt: true,
       updatedAt: true,
@@ -106,7 +119,7 @@ export async function findAll(
   };
 }
 
-export async function findById(id: string): Promise<Employee | null> {
+export async function findById(id: string) {
   return prisma.employee.findUnique({
     where: { id },
     include: {
@@ -232,17 +245,29 @@ export async function deleteEmployee(
     include: { role: true },
   });
 
-  const employee = await prisma.employee.delete({
+  if (!oldEmployee) {
+    throw new Error("Employee not found");
+  }
+
+  // Update employee status to terminated instead of deleting
+  const employee = await prisma.employee.update({
     where: { id },
+    data: {
+      status: "terminated",
+    },
+    include: {
+      role: true,
+    },
   });
 
-  // Log the deletion
+  // Log the termination (still using DELETE action for business logic)
   await createLog({
     action: "DELETE",
     entityType: "Employee",
     entityId: id,
     ...(performedBy && { performedBy }),
     oldData: oldEmployee,
+    newData: employee,
   });
 
   return employee;

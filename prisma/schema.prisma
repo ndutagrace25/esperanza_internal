@@ -8,7 +8,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   // Note: url property is valid for Prisma 6 (we're using 6.19.0)
-  url      = env("DATABASE_URL")
+  // url      = env("DATABASE_URL")
 }
 
 model Role {
@@ -33,11 +33,14 @@ model Employee {
   tempPassword String?
   tempPasswordExpiresAt DateTime?
   roleId    String?
+  status    EmployeeStatus   @default(active)
   role      Role?    @relation(fields: [roleId], references: [id])
   hireDate  DateTime @default(now())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   systemLogs SystemLog[]
+  assignedClients Client[]  // Clients assigned to this employee
+  broughtInClients Client[] @relation("EmployeeToClient")
 
   @@map("employees")
 }
@@ -58,5 +61,46 @@ model SystemLog {
   @@index([performedBy])
   @@index([createdAt])
   @@map("system_logs")
+}
+
+enum EmployeeStatus {
+  active
+  on_leave
+  terminated
+}
+
+model Client {
+  id              String        @id @default(cuid())
+  companyName     String
+  contactPerson   String?       // Primary contact person name
+  email           String?       // Primary email
+  phone           String?       // Primary phone
+  alternatePhone  String?       // Alternate phone number
+  address         String?       // Physical address
+  city            String?
+  state           String?
+  country         String?
+  postalCode      String?
+  website         String?       // Company website
+  taxId           String?       // Tax ID or VAT number
+  status          ClientStatus  @default(active)
+  notes           String?       // Additional notes about the client
+  broughtInById   String?       // Employee who brought in the client
+  broughtInBy      Employee?     @relation("EmployeeToClient", fields: [broughtInById], references: [id])
+  assignedToId    String?       // Employee assigned to manage this client
+  assignedTo      Employee?     @relation(fields: [assignedToId], references: [id])
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("clients")
+  @@index([status])
+  @@index([assignedToId])
+  @@index([email])
+}
+
+enum ClientStatus {
+  active
+  inactive
+  archived
 }
 
