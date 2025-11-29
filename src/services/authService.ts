@@ -66,6 +66,14 @@ export async function login(
     };
   }
 
+  // Check if employee is terminated
+  if (employee.status === "terminated") {
+    return {
+      success: false,
+      error: "Account access has been terminated",
+    };
+  }
+
   // If tempPassword exists, user must reset password before logging in
   if (employee.tempPassword) {
     return {
@@ -115,6 +123,14 @@ export async function requestPasswordReset(
     return {
       success: false,
       error: "Email does not exist in our system",
+    };
+  }
+
+  // Check if employee is terminated
+  if (employee.status === "terminated") {
+    return {
+      success: false,
+      error: "Account access has been terminated",
     };
   }
 
@@ -182,6 +198,14 @@ export async function resetPassword(
     return {
       success: false,
       error: "Invalid email or temporary password",
+    };
+  }
+
+  // Check if employee is terminated
+  if (employee.status === "terminated") {
+    return {
+      success: false,
+      error: "Account access has been terminated",
     };
   }
 

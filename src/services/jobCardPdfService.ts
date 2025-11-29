@@ -138,7 +138,7 @@ export async function generateJobCardPdf(jobCardId: string): Promise<Buffer> {
   doc.fontSize(10).font("Helvetica");
 
   const companyInfo = [
-    ["Company Name:", "Esperanza Digital Solution"],
+    ["Company Name:", "Esperanza DS Ltd"],
     ["Phone:", "+254708807403"],
     ["Email:", "venturabsltd@gmail.com"],
     ["Address:", "Nairobi, Kenya"],
