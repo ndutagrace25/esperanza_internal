@@ -93,6 +93,7 @@ model Client {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   jobCards        JobCard[]
+  sales           Sale[]
 
   @@map("clients")
   @@index([status])
@@ -143,6 +144,7 @@ model Product {
   notes           String?           // Additional notes
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
+  saleItems       SaleItem[]
 
   @@map("products")
   @@index([categoryId])
@@ -281,6 +283,54 @@ enum ApprovalRole {
 enum SignatureType {
   ON_PAPER
   DIGITAL
+}
+
+/// Sales model - represents a sale transaction to a client
+model Sale {
+  id              String        @id @default(cuid())
+  saleNumber      String        @unique  // e.g. "SALE-2025-001"
+  clientId        String
+  client          Client        @relation(fields: [clientId], references: [id])
+  saleDate        DateTime      @default(now())
+  status          SaleStatus    @default(DRAFT)
+  totalAmount     Decimal       @db.Decimal(10, 2) // Calculated from items
+  notes           String?       // Additional notes about the sale
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  items           SaleItem[]
+
+  @@index([clientId])
+  @@index([saleDate])
+  @@index([status])
+  @@map("sales")
+}
+
+/// Individual items in a sale
+model SaleItem {
+  id              String        @id @default(cuid())
+  saleId          String
+  sale            Sale           @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product        @relation(fields: [productId], references: [id])
+  quantity        Int            // Number of units sold
+  unitPrice       Decimal        @db.Decimal(10, 2) // Price per unit at time of sale
+  totalPrice      Decimal        @db.Decimal(10, 2) // quantity * unitPrice
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([saleId])
+  @@index([productId])
+  @@map("sale_items")
+}
+
+/// Sale status enum
+enum SaleStatus {
+  DRAFT
+  PENDING
+  COMPLETED
+  CANCELLED
 }
 
 
