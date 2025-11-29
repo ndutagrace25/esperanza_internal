@@ -1,6 +1,7 @@
 import { prisma } from "../lib/prisma.js";
 import type { JobCard, Prisma } from "@prisma/client";
 import { createLog } from "./systemLogService.js";
+import { sendJobCardNotificationEmail } from "../utils/email.js";
 
 export type CreateJobCardData = Omit<
   Prisma.JobCardCreateInput,
@@ -15,6 +16,8 @@ export type CreateJobCardData = Omit<
 > & {
   clientId: string;
   supportStaffId?: string | null;
+  tasks?: Array<Omit<CreateJobTaskData, "jobCardId">>;
+  expenses?: Array<Omit<CreateJobExpenseData, "jobCardId">>;
 };
 
 export type UpdateJobCardData = Partial<
@@ -374,7 +377,7 @@ export async function create(
   data: CreateJobCardData,
   performedBy?: string
 ): Promise<JobCard> {
-  const { clientId, supportStaffId, ...jobCardData } = data;
+  const { clientId, supportStaffId, tasks, expenses, ...jobCardData } = data;
 
   // Generate unique job number
   const jobNumber = await generateJobNumber();
@@ -390,6 +393,32 @@ export async function create(
   if (supportStaffId) {
     createData.supportStaff = {
       connect: { id: supportStaffId },
+    };
+  }
+
+  // Add tasks if provided
+  if (tasks && tasks.length > 0) {
+    createData.tasks = {
+      create: tasks.map((task) => ({
+        moduleName: task.moduleName ?? null,
+        taskType: task.taskType ?? null,
+        description: task.description,
+        startTime: task.startTime ?? null,
+        endTime: task.endTime ?? null,
+      })),
+    };
+  }
+
+  // Add expenses if provided
+  if (expenses && expenses.length > 0) {
+    createData.expenses = {
+      create: expenses.map((expense) => ({
+        category: expense.category,
+        description: expense.description ?? null,
+        amount: expense.amount,
+        hasReceipt: expense.hasReceipt ?? false,
+        receiptUrl: expense.receiptUrl ?? null,
+      })),
     };
   }
 
@@ -413,6 +442,32 @@ export async function create(
           email: true,
         },
       },
+      tasks: {
+        select: {
+          id: true,
+          moduleName: true,
+          taskType: true,
+          description: true,
+          startTime: true,
+          endTime: true,
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
+      expenses: {
+        select: {
+          id: true,
+          category: true,
+          description: true,
+          amount: true,
+          hasReceipt: true,
+          receiptUrl: true,
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
     },
   });
 
@@ -424,6 +479,86 @@ export async function create(
     ...(performedBy && { performedBy }),
     newData: jobCard,
   });
+
+  // Log task creations
+  if (jobCard.tasks.length > 0) {
+    for (const task of jobCard.tasks) {
+      await createLog({
+        action: "CREATE",
+        entityType: "JobTask",
+        entityId: task.id,
+        ...(performedBy && { performedBy }),
+        newData: task,
+        metadata: JSON.stringify({ jobCardId: jobCard.id }),
+      });
+    }
+  }
+
+  // Log expense creations
+  if (jobCard.expenses.length > 0) {
+    for (const expense of jobCard.expenses) {
+      await createLog({
+        action: "CREATE",
+        entityType: "JobExpense",
+        entityId: expense.id,
+        ...(performedBy && { performedBy }),
+        newData: expense,
+        metadata: JSON.stringify({ jobCardId: jobCard.id }),
+      });
+    }
+  }
+
+  // Send email notification to directors after successful creation
+  try {
+    // Get all directors
+    const directors = await prisma.employee.findMany({
+      where: {
+        status: "active",
+        role: {
+          name: "DIRECTOR",
+        },
+      },
+      select: {
+        email: true,
+      },
+    });
+
+    const directorEmails = directors
+      .map((director) => director.email)
+      .filter((email): email is string => email !== null);
+
+    // Only send email if there's at least one task or expense
+    if (
+      directorEmails.length > 0 &&
+      (jobCard.tasks.length > 0 || jobCard.expenses.length > 0)
+    ) {
+      await sendJobCardNotificationEmail(
+        {
+          jobNumber: jobCard.jobNumber,
+          visitDate: jobCard.visitDate,
+          client: jobCard.client,
+          supportStaff: jobCard.supportStaff,
+          tasks: jobCard.tasks.map((task) => ({
+            moduleName: task.moduleName,
+            taskType: task.taskType,
+            description: task.description,
+            startTime: task.startTime,
+            endTime: task.endTime,
+          })),
+          expenses: jobCard.expenses.map((expense) => ({
+            category: expense.category,
+            description: expense.description,
+            amount: Number(expense.amount),
+            hasReceipt: expense.hasReceipt,
+          })),
+        },
+        directorEmails
+      );
+    }
+  } catch (error) {
+    // Log error but don't fail the job card creation
+    console.error("Failed to send job card notification email:", error);
+  }
 
   return jobCard;
 }
@@ -795,4 +930,3 @@ export async function deleteApproval(id: string, performedBy?: string) {
 
   return approval;
 }
-
