@@ -166,14 +166,11 @@ export async function sendJobCardNotificationEmail(
               <td style="padding: 8px; border-bottom: 1px solid #ddd;">${
                 task.taskType || "—"
               }</td>
-              <td style="padding: 8px; border-bottom: 1px solid #ddd;">${
-                task.description
-              }</td>
             </tr>
           `
           )
           .join("")
-      : '<tr><td colspan="4" style="padding: 8px; text-align: center; color: #666;">No tasks added</td></tr>';
+      : '<tr><td colspan="3" style="padding: 8px; text-align: center; color: #666;">No tasks added</td></tr>';
 
   const totalExpenses = jobCard.expenses.reduce(
     (sum, expense) => sum + Number(expense.amount),
@@ -192,23 +189,17 @@ export async function sendJobCardNotificationEmail(
               <td style="padding: 8px; border-bottom: 1px solid #ddd;">${
                 expense.category
               }</td>
-              <td style="padding: 8px; border-bottom: 1px solid #ddd;">${
-                expense.description || "—"
-              }</td>
               <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">KES ${Number(
                 expense.amount
               ).toLocaleString("en-KE", {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })}</td>
-              <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: center;">${
-                expense.hasReceipt ? "Yes" : "No"
-              }</td>
             </tr>
           `
           )
           .join("")
-      : '<tr><td colspan="5" style="padding: 8px; text-align: center; color: #666;">No expenses added</td></tr>';
+      : '<tr><td colspan="3" style="padding: 8px; text-align: center; color: #666;">No expenses added</td></tr>';
 
   const html = `
     <!DOCTYPE html>
@@ -302,7 +293,6 @@ export async function sendJobCardNotificationEmail(
                   <th>#</th>
                   <th>Module Name</th>
                   <th>Task Type</th>
-                  <th>Description</th>
                 </tr>
               </thead>
               <tbody>
@@ -320,9 +310,7 @@ export async function sendJobCardNotificationEmail(
                 <tr>
                   <th>#</th>
                   <th>Category</th>
-                  <th>Description</th>
                   <th>Amount</th>
-                  <th>Has Receipt</th>
                 </tr>
               </thead>
               <tbody>
@@ -331,12 +319,11 @@ export async function sendJobCardNotificationEmail(
                   jobCard.expenses.length > 0
                     ? `
                 <tr>
-                  <td colspan="3" class="total">Total:</td>
+                  <td colspan="2" class="total">Total:</td>
                   <td class="total">KES ${totalExpenses.toLocaleString(
                     "en-KE",
                     { minimumFractionDigits: 2, maximumFractionDigits: 2 }
                   )}</td>
-                  <td></td>
                 </tr>
                 `
                     : ""
@@ -382,7 +369,6 @@ export async function sendJobCardNotificationEmail(
             .map(
               (task, index) => `
      ${index + 1}. ${task.moduleName || "N/A"} - ${task.taskType || "N/A"}
-       Description: ${task.description}
     `
             )
             .join("")
@@ -396,12 +382,10 @@ export async function sendJobCardNotificationEmail(
             .map(
               (expense, index) => `
     ${index + 1}. ${expense.category}
-       Description: ${expense.description || "N/A"}
        Amount: KES ${Number(expense.amount).toLocaleString("en-KE", {
          minimumFractionDigits: 2,
          maximumFractionDigits: 2,
        })}
-       Has Receipt: ${expense.hasReceipt ? "Yes" : "No"}
     `
             )
             .join("")
