@@ -411,3 +411,179 @@ export async function sendJobCardNotificationEmail(
     text,
   });
 }
+
+/**
+ * Sends expense notification email to directors
+ */
+export async function sendExpenseNotificationEmail(
+  expense: {
+    expenseNumber: string;
+    description: string;
+    amount: number;
+    expenseDate: Date;
+    category: { name: string };
+    vendor: string | null;
+    status: string;
+    hasReceipt: boolean;
+    jobCard: { jobNumber: string; client: { companyName: string } } | null;
+    submittedBy: { firstName: string; lastName: string; email: string } | null;
+  },
+  directorEmails: string[],
+  action: "created" | "updated"
+): Promise<void> {
+  if (directorEmails.length === 0) {
+    return; // No directors to notify
+  }
+
+  const formatDate = (date: Date): string => {
+    return new Date(date).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  };
+
+  const formatCurrency = (amount: number): string => {
+    return `KES ${amount.toLocaleString("en-KE", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  };
+
+  const submitterName = expense.submittedBy
+    ? `${expense.submittedBy.firstName} ${expense.submittedBy.lastName}`
+    : "Unknown";
+
+  const statusColor = {
+    DRAFT: "#64748b",
+    PENDING: "#f59e0b",
+    APPROVED: "#3b82f6",
+    PAID: "#22c55e",
+    REJECTED: "#ef4444",
+    CANCELLED: "#6b7280",
+  }[expense.status] || "#64748b";
+
+  const actionTitle = action === "created" ? "New Expense Submitted" : "Expense Updated";
+  const actionVerb = action === "created" ? "submitted" : "updated";
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background-color: #059669; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; background-color: #f9f9f9; }
+        .info-box { background-color: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 15px; margin: 15px 0; }
+        .info-row { margin: 10px 0; }
+        .info-label { font-weight: bold; color: #666; display: block; font-size: 12px; text-transform: uppercase; }
+        .info-value { font-size: 16px; margin-top: 2px; }
+        .amount { font-size: 24px; font-weight: bold; color: #059669; }
+        .status-badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: bold; color: white; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+        .job-card-link { background-color: #f0fdf4; border: 1px solid #22c55e; border-radius: 4px; padding: 10px; margin: 10px 0; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>${actionTitle}</h1>
+        </div>
+        <div class="content">
+          <p>Dear Director,</p>
+          <p>An expense has been ${actionVerb} in the system and requires your attention.</p>
+          
+          <div class="info-box">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+              <div>
+                <div class="info-label">Expense Number</div>
+                <div class="info-value" style="font-weight: bold;">${expense.expenseNumber}</div>
+              </div>
+              <div>
+                <span class="status-badge" style="background-color: ${statusColor};">${expense.status}</span>
+              </div>
+            </div>
+            
+            <div style="text-align: center; padding: 15px 0; border-top: 1px solid #eee; border-bottom: 1px solid #eee; margin: 15px 0;">
+              <div class="info-label">Amount</div>
+              <div class="amount">${formatCurrency(expense.amount)}</div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+              <div class="info-row">
+                <span class="info-label">Category</span>
+                <span class="info-value">${expense.category.name}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Expense Date</span>
+                <span class="info-value">${formatDate(expense.expenseDate)}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Submitted By</span>
+                <span class="info-value">${submitterName}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Has Receipt</span>
+                <span class="info-value">${expense.hasReceipt ? "Yes" : "No"}</span>
+              </div>
+              ${expense.vendor ? `
+              <div class="info-row">
+                <span class="info-label">Vendor</span>
+                <span class="info-value">${expense.vendor}</span>
+              </div>
+              ` : ""}
+            </div>
+
+            <div class="info-row" style="margin-top: 15px;">
+              <span class="info-label">Description</span>
+              <span class="info-value">${expense.description}</span>
+            </div>
+          </div>
+
+          ${expense.jobCard ? `
+          <div class="job-card-link">
+            <strong>📋 Linked to Job Card:</strong> ${expense.jobCard.jobNumber} - ${expense.jobCard.client.companyName}
+          </div>
+          ` : ""}
+
+          <p>Please review and take appropriate action in the system.</p>
+        </div>
+        <div class="footer">
+          <p>This is an automated message from Esperanza Internal System. Please do not reply.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const text = `
+    ${actionTitle}
+    
+    An expense has been ${actionVerb} in the system.
+    
+    Expense Details:
+    - Expense Number: ${expense.expenseNumber}
+    - Amount: ${formatCurrency(expense.amount)}
+    - Category: ${expense.category.name}
+    - Expense Date: ${formatDate(expense.expenseDate)}
+    - Status: ${expense.status}
+    - Submitted By: ${submitterName}
+    - Has Receipt: ${expense.hasReceipt ? "Yes" : "No"}
+    ${expense.vendor ? `- Vendor: ${expense.vendor}` : ""}
+    
+    Description: ${expense.description}
+    
+    ${expense.jobCard ? `Linked to Job Card: ${expense.jobCard.jobNumber} - ${expense.jobCard.client.companyName}` : ""}
+    
+    Please review and take appropriate action in the system.
+  `;
+
+  await sendEmail({
+    to: directorEmails,
+    subject: `${actionTitle}: ${expense.expenseNumber} - ${formatCurrency(expense.amount)}`,
+    html,
+    text,
+  });
+}

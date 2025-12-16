@@ -1,7 +1,8 @@
 import { prisma } from "../lib/prisma.js";
-import type { JobCard, Prisma } from "@prisma/client";
+import type { JobCard, Prisma, JobCardStatus } from "@prisma/client";
 import { createLog } from "./systemLogService.js";
 import { sendJobCardNotificationEmail } from "../utils/email.js";
+import * as expenseService from "./expenseService.js";
 
 export type CreateJobCardData = Omit<
   Prisma.JobCardCreateInput,
@@ -494,7 +495,7 @@ export async function create(
     }
   }
 
-  // Log expense creations
+  // Log expense creations and sync to formal Expense module
   if (jobCard.expenses.length > 0) {
     for (const expense of jobCard.expenses) {
       await createLog({
@@ -505,6 +506,30 @@ export async function create(
         newData: expense,
         metadata: JSON.stringify({ jobCardId: jobCard.id }),
       });
+
+      // Create formal Expense record linked to this JobExpense
+      try {
+        await expenseService.createFromJobExpense(
+          {
+            jobExpenseId: expense.id,
+            jobCardId: jobCard.id,
+            category: expense.category,
+            description: expense.description,
+            amount: expense.amount,
+            hasReceipt: expense.hasReceipt,
+            receiptUrl: expense.receiptUrl,
+            expenseDate: jobCard.visitDate,
+            submittedById: jobCard.supportStaffId,
+            jobCardStatus: jobCard.status as JobCardStatus,
+          },
+          performedBy
+        );
+      } catch (error) {
+        console.error(
+          `Failed to create formal expense for JobExpense ${expense.id}:`,
+          error
+        );
+      }
     }
   }
 
@@ -660,6 +685,22 @@ export async function update(
     newData: jobCard,
   });
 
+  // Sync expense statuses if job card status changed
+  if (data.status && oldJobCard?.status !== data.status) {
+    try {
+      await expenseService.syncExpensesWithJobCardStatus(
+        id,
+        data.status as JobCardStatus,
+        performedBy
+      );
+    } catch (error) {
+      console.error(
+        `Failed to sync expenses for job card ${id} status change:`,
+        error
+      );
+    }
+  }
+
   return jobCard;
 }
 
@@ -683,7 +724,21 @@ export async function deleteJobCard(
     throw new Error("Job card not found");
   }
 
-  // Delete the job card (cascades to tasks, expenses, approvals)
+  // Delete linked formal Expenses first (due to foreign key constraints)
+  // These are expenses that reference this job card
+  try {
+    const linkedExpenses = await expenseService.findByJobCardId(id);
+    for (const expense of linkedExpenses) {
+      await expenseService.deleteExpense(expense.id, performedBy);
+    }
+  } catch (error) {
+    console.error(
+      `Failed to delete linked formal expenses for JobCard ${id}:`,
+      error
+    );
+  }
+
+  // Delete the job card (cascades to tasks, JobExpenses, approvals)
   const jobCard = await prisma.jobCard.delete({
     where: { id },
   });
@@ -803,6 +858,42 @@ export async function createExpense(
     metadata: JSON.stringify({ jobCardId }),
   });
 
+  // Create formal Expense record linked to this JobExpense
+  try {
+    const jobCard = await prisma.jobCard.findUnique({
+      where: { id: jobCardId },
+      select: {
+        id: true,
+        visitDate: true,
+        status: true,
+        supportStaffId: true,
+      },
+    });
+
+    if (jobCard) {
+      await expenseService.createFromJobExpense(
+        {
+          jobExpenseId: expense.id,
+          jobCardId: jobCard.id,
+          category: expense.category,
+          description: expense.description,
+          amount: expense.amount,
+          hasReceipt: expense.hasReceipt,
+          receiptUrl: expense.receiptUrl,
+          expenseDate: jobCard.visitDate,
+          submittedById: jobCard.supportStaffId,
+          jobCardStatus: jobCard.status as JobCardStatus,
+        },
+        performedBy
+      );
+    }
+  } catch (error) {
+    console.error(
+      `Failed to create formal expense for JobExpense ${expense.id}:`,
+      error
+    );
+  }
+
   return expense;
 }
 
@@ -830,6 +921,38 @@ export async function updateExpense(
     newData: expense,
   });
 
+  // Update linked formal Expense if exists
+  try {
+    const linkedExpense = await expenseService.findByJobExpenseId(id);
+    if (linkedExpense) {
+      const updateData: expenseService.UpdateExpenseData = {};
+
+      // Sync relevant fields
+      if (data.amount !== undefined) {
+        updateData.amount = data.amount;
+      }
+      if (data.hasReceipt !== undefined) {
+        updateData.hasReceipt = data.hasReceipt as boolean;
+      }
+      if (data.receiptUrl !== undefined) {
+        updateData.receiptUrl = data.receiptUrl as string | null;
+      }
+      if (data.description !== undefined) {
+        updateData.description = data.description as string;
+      }
+
+      // Only update if there are changes
+      if (Object.keys(updateData).length > 0) {
+        await expenseService.update(linkedExpense.id, updateData, performedBy);
+      }
+    }
+  } catch (error) {
+    console.error(
+      `Failed to update linked formal expense for JobExpense ${id}:`,
+      error
+    );
+  }
+
   return expense;
 }
 
@@ -837,6 +960,16 @@ export async function deleteExpense(id: string, performedBy?: string) {
   const oldExpense = await prisma.jobExpense.findUnique({
     where: { id },
   });
+
+  // Delete linked formal Expense first (due to foreign key constraint)
+  try {
+    await expenseService.deleteByJobExpenseId(id, performedBy);
+  } catch (error) {
+    console.error(
+      `Failed to delete linked formal expense for JobExpense ${id}:`,
+      error
+    );
+  }
 
   const expense = await prisma.jobExpense.delete({
     where: { id },

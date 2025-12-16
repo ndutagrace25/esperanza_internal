@@ -42,6 +42,8 @@ model Employee {
   assignedClients Client[]  // Clients assigned to this employee
   broughtInClients Client[] @relation("EmployeeToClient")
   jobCards JobCard[] @relation("JobCardsCreated")
+  expensesSubmitted Expense[] @relation("ExpensesSubmitted")
+  expensesApproved  Expense[] @relation("ExpensesApproved")
 
   @@map("employees")
 }
@@ -190,7 +192,8 @@ model JobCard {
 
   // Relations
   tasks           JobTask[]
-  expenses        JobExpense[]
+  expenses        JobExpense[]      // Quick field expenses logged during visit
+  formalExpenses  Expense[]         // Formal expense claims linked to this job card
   approvals       JobCardApproval[]
 
   // Which staff created / handled this job card
@@ -237,6 +240,9 @@ model JobExpense {
   amount          Decimal    @db.Decimal(10, 2)
   hasReceipt      Boolean    @default(false)
   receiptUrl      String?    // if you decide to upload receipt image later
+  
+  // Link to formal expense claim (when submitted for reimbursement)
+  formalExpense   Expense?   // One-to-one: this job expense can become a formal expense claim
 
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
@@ -269,6 +275,7 @@ model JobCardApproval {
 enum JobCardStatus {
   DRAFT
   PENDING_CLIENT_CONFIRMATION
+  IN_PROGRESS
   COMPLETED
   CANCELLED
 }
@@ -331,6 +338,88 @@ enum SaleStatus {
   PENDING
   COMPLETED
   CANCELLED
+}
+
+/// Expense categories for organizing business expenses
+model ExpenseCategory {
+  id          String                @id @default(cuid())
+  name        String                @unique
+  description String?
+  status      ExpenseCategoryStatus @default(active)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  expenses    Expense[]
+
+  @@map("expense_categories")
+  @@index([status])
+}
+
+enum ExpenseCategoryStatus {
+  active
+  inactive
+  archived
+}
+
+/// Business expenses tracking
+model Expense {
+  id              String          @id @default(cuid())
+  expenseNumber   String          @unique  // e.g. "EXP-2025-001"
+  categoryId      String
+  category        ExpenseCategory @relation(fields: [categoryId], references: [id])
+  description     String          // What the expense was for
+  amount          Decimal         @db.Decimal(10, 2)
+  expenseDate     DateTime        // When the expense occurred
+  vendor          String?         // Who was paid (supplier, vendor name)
+  referenceNumber String?         // Invoice/receipt number
+  paymentMethod   PaymentMethod?  // How it was paid
+  status          ExpenseStatus   @default(PENDING)
+  hasReceipt      Boolean         @default(false)
+  receiptUrl      String?         // Receipt image URL
+  notes           String?         // Additional notes
+  
+  // Job Card linkage (for field expenses)
+  jobCardId       String?         // Optional link to job card
+  jobCard         JobCard?        @relation(fields: [jobCardId], references: [id])
+  jobExpenseId    String?         @unique // Optional link to specific JobExpense record
+  jobExpense      JobExpense?     @relation(fields: [jobExpenseId], references: [id])
+  
+  // Workflow tracking
+  submittedById   String?         // Employee who submitted the expense
+  submittedBy     Employee?       @relation("ExpensesSubmitted", fields: [submittedById], references: [id])
+  approvedById    String?         // Employee who approved the expense
+  approvedBy      Employee?       @relation("ExpensesApproved", fields: [approvedById], references: [id])
+  approvedAt      DateTime?       // When it was approved
+  rejectedAt      DateTime?       // When it was rejected
+  rejectionReason String?         // Why it was rejected
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@map("expenses")
+  @@index([categoryId])
+  @@index([status])
+  @@index([expenseDate])
+  @@index([submittedById])
+  @@index([jobCardId])
+}
+
+enum ExpenseStatus {
+  DRAFT
+  PENDING      // Awaiting approval
+  APPROVED     // Approved but not yet paid
+  PAID         // Paid/Reimbursed
+  REJECTED     // Rejected
+  CANCELLED    // Cancelled
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  MPESA
+  CHEQUE
+  CREDIT_CARD
+  DEBIT_CARD
+  OTHER
 }
 
 

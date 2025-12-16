@@ -7,6 +7,7 @@ import productCategoryRoutes from "./productCategoryRoutes.js";
 import productRoutes from "./productRoutes.js";
 import jobCardRoutes from "./jobCardRoutes.js";
 import saleRoutes from "./saleRoutes.js";
+import expenseRoutes from "./expenseRoutes.js";
 import { authenticate } from "../middleware/auth.js";
 
 const router = Router();
@@ -22,5 +23,6 @@ router.use("/product-categories", authenticate, productCategoryRoutes);
 router.use("/products", authenticate, productRoutes);
 router.use("/job-cards", authenticate, jobCardRoutes);
 router.use("/sales", authenticate, saleRoutes);
+router.use("/expenses", authenticate, expenseRoutes);
 
 export default router;

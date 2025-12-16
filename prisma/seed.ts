@@ -89,6 +89,43 @@ async function main() {
     );
   }
 
+  console.log("🌱 Seeding expense categories...");
+
+  const expenseCategories = [
+    { name: "Transport", description: "Travel, fuel, taxi, public transport" },
+    { name: "Meals & Entertainment", description: "Lunch, dinner, client meals" },
+    { name: "Office Supplies", description: "Stationery, printing, supplies" },
+    { name: "Utilities", description: "Electricity, water, internet, phone bills" },
+    { name: "Rent", description: "Office rent and related costs" },
+    { name: "Equipment", description: "Hardware, tools, machinery" },
+    { name: "Software & Subscriptions", description: "Software licenses, SaaS subscriptions" },
+    { name: "Marketing", description: "Advertising, promotional materials" },
+    { name: "Professional Services", description: "Legal, accounting, consulting fees" },
+    { name: "Insurance", description: "Business insurance premiums" },
+    { name: "Training & Development", description: "Courses, certifications, workshops" },
+    { name: "Repairs & Maintenance", description: "Equipment repairs, office maintenance" },
+    { name: "Communication", description: "Airtime, data bundles, postage" },
+    { name: "Accommodation", description: "Hotel, lodging for business trips" },
+    { name: "Bank Charges", description: "Transaction fees, account charges" },
+    { name: "Taxes & Licenses", description: "Business permits, regulatory fees" },
+    { name: "Miscellaneous", description: "Other uncategorized expenses" },
+  ];
+
+  for (const expCategory of expenseCategories) {
+    const category = await prisma.expenseCategory.upsert({
+      where: { name: expCategory.name },
+      update: { description: expCategory.description },
+      create: {
+        name: expCategory.name,
+        description: expCategory.description,
+        status: "active",
+      },
+    });
+    console.log(
+      `✅ Created/Updated expense category: ${category.name} (${category.id})`
+    );
+  }
+
   console.log("🎉 Seeding completed!");
 }
 
