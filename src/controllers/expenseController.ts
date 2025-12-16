@@ -33,7 +33,9 @@ export async function getAll(req: Request, res: Response): Promise<void> {
   try {
     const page = parseIntParam(req.query["page"]);
     const limit = parseIntParam(req.query["limit"]);
-    const status = parseQueryParam(req.query["status"]) as ExpenseStatus | undefined;
+    const status = parseQueryParam(req.query["status"]) as
+      | ExpenseStatus
+      | undefined;
     const categoryId = parseQueryParam(req.query["categoryId"]);
     const submittedById = parseQueryParam(req.query["submittedById"]);
     const startDate = parseDateParam(req.query["startDate"]);
@@ -129,10 +131,10 @@ export async function getByExpenseNumber(
  */
 export async function create(req: Request, res: Response): Promise<void> {
   try {
-    const { 
-      categoryId, 
-      description, 
-      amount, 
+    const {
+      categoryId,
+      description,
+      amount,
       expenseDate,
       vendor,
       referenceNumber,
@@ -167,7 +169,7 @@ export async function create(req: Request, res: Response): Promise<void> {
         description,
         amount,
         expenseDate: new Date(expenseDate),
-        submittedById: req.employee?.id,
+        submittedById: req.employee?.id ?? null,
         vendor: vendor || null,
         referenceNumber: referenceNumber || null,
         paymentMethod: paymentMethod || null,
@@ -215,20 +217,26 @@ export async function update(req: Request, res: Response): Promise<void> {
     } = req.body;
 
     const updateData: expenseService.UpdateExpenseData = {};
-    
+
     if (categoryId !== undefined) updateData.categoryId = categoryId;
     if (description !== undefined) updateData.description = description;
     if (amount !== undefined) updateData.amount = amount;
-    if (expenseDate !== undefined) updateData.expenseDate = new Date(expenseDate);
+    if (expenseDate !== undefined)
+      updateData.expenseDate = new Date(expenseDate);
     if (vendor !== undefined) updateData.vendor = vendor;
-    if (referenceNumber !== undefined) updateData.referenceNumber = referenceNumber;
+    if (referenceNumber !== undefined)
+      updateData.referenceNumber = referenceNumber;
     if (paymentMethod !== undefined) updateData.paymentMethod = paymentMethod;
     if (status !== undefined) updateData.status = status;
     if (hasReceipt !== undefined) updateData.hasReceipt = hasReceipt;
     if (receiptUrl !== undefined) updateData.receiptUrl = receiptUrl;
     if (notes !== undefined) updateData.notes = notes;
 
-    const expense = await expenseService.update(id, updateData, req.employee?.id);
+    const expense = await expenseService.update(
+      id,
+      updateData,
+      req.employee?.id
+    );
     res.json(expense);
   } catch (error) {
     console.error("Error updating expense:", error);
@@ -370,7 +378,7 @@ export async function deleteExpense(
  * Get all active expense categories
  */
 export async function getCategories(
-  req: Request,
+  _req: Request,
   res: Response
 ): Promise<void> {
   try {
@@ -409,4 +417,3 @@ export async function getCategoryById(
     res.status(500).json({ error: "Failed to fetch expense category" });
   }
 }
-
