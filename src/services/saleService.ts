@@ -512,23 +512,22 @@ export async function create(
 
   // Optionally add first installment (e.g. deposit paid at creation)
   const amount = firstInstallment?.amount != null ? Number(firstInstallment.amount) : 0;
-  if (amount > 0) {
+  if (amount > 0 && firstInstallment) {
     const total = Number(sale.totalAmount);
     if (amount > total) {
       throw new Error("First installment amount cannot exceed the sale total");
     }
-    await createInstallment(
-      sale.id,
-      {
-        amount: firstInstallment!.amount,
-        paidAt: firstInstallment!.paidAt
-          ? new Date(firstInstallment.paidAt)
-          : undefined,
-        notes: firstInstallment!.notes ?? undefined,
-        status: "PAID",
-      },
-      performedBy
-    );
+    const installmentData: CreateSaleInstallmentData = {
+      amount: firstInstallment.amount,
+      status: "PAID",
+    };
+    if (firstInstallment.paidAt != null) {
+      installmentData.paidAt = new Date(firstInstallment.paidAt);
+    }
+    if (firstInstallment.notes != null && firstInstallment.notes !== "") {
+      installmentData.notes = firstInstallment.notes;
+    }
+    await createInstallment(sale.id, installmentData, performedBy);
     const updated = await findById(sale.id);
     return updated ?? sale;
   }
