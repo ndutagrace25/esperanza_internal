@@ -138,7 +138,7 @@ export async function sendPaymentReminders(now: Date = new Date()): Promise<{
       continue;
     }
 
-    const message = `Dear ${customerName(client)}, your monthly Ventura subscription is due for renewal on ${dueDateStr}.\nCompany name: ${COMPANY_NAME}\nBank account: ${BANK_ACCOUNT}`;
+    const message = `Dear ${customerName(client)}, your monthly Ventura Prime ERP Software subscription is due for renewal on ${dueDateStr}.\nCompany name: ${COMPANY_NAME}\nBank account: ${BANK_ACCOUNT}`;
 
     try {
       await sendSingleSms({ message, mobile });
