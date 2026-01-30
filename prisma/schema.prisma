@@ -96,11 +96,29 @@ model Client {
   updatedAt       DateTime      @updatedAt
   jobCards        JobCard[]
   sales           Sale[]
+  integrations    ClientIntegration[]
 
   @@map("clients")
   @@index([status])
   @@index([assignedToId])
   @@index([email])
+}
+
+/// Client integration details stored as dynamic label/value pairs (e.g. mpesa_web_portal_username, mpesa_web_portal_password, api_key).
+model ClientIntegration {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  label     String   // e.g. "mpesa_web_portal_username", "mpesa_web_portal_password"
+  value     String   // the value (consider encrypting sensitive values in the application)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clientId, label]) // one value per label per client
+  @@map("client_integrations")
+  @@index([clientId])
 }
 
 enum ClientStatus {
