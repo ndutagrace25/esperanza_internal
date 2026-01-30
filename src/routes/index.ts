@@ -9,6 +9,7 @@ import jobCardRoutes from "./jobCardRoutes.js";
 import saleRoutes from "./saleRoutes.js";
 import expenseRoutes from "./expenseRoutes.js";
 import clientIntegrationRoutes from "./clientIntegrationRoutes.js";
+import smsRoutes from "./smsRoutes.js";
 import { authenticate } from "../middleware/auth.js";
 
 const router = Router();
@@ -21,6 +22,7 @@ router.use("/employees", authenticate, employeeRoutes);
 router.use("/roles", authenticate, roleRoutes);
 router.use("/clients", authenticate, clientRoutes);
 router.use("/client-integrations", authenticate, clientIntegrationRoutes);
+router.use("/sms", authenticate, smsRoutes);
 router.use("/product-categories", authenticate, productCategoryRoutes);
 router.use("/products", authenticate, productRoutes);
 router.use("/job-cards", authenticate, jobCardRoutes);

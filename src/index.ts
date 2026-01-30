@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import { env } from "./config/env.js";
 import routes from "./routes/index.js";
+import { startPaymentReminderCron } from "./jobs/paymentReminderCron.js";
 
 const app = express();
 
@@ -37,4 +38,6 @@ app.listen(env.PORT, () => {
   console.log(
     `🗄️  Database: ${env.DATABASE_URL ? "Configured" : "Not configured"}`
   );
+  // Payment reminder SMS: 1st, 2nd, 3rd of every month at 8:00 AM (Africa/Nairobi)
+  startPaymentReminderCron();
 });

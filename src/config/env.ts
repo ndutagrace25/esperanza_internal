@@ -70,4 +70,10 @@ export const env = {
 
   // Optional API keys
   API_KEY: process.env["API_KEY"],
+
+  // SMS (Advanta/QuickSMS)
+  SMS_BASE_URL: process.env["SMS_BASE_URL"] || "https://quicksms.advantasms.com",
+  SMS_API_KEY: process.env["SMS_API_KEY"] || "",
+  SMS_SHORTCODE: process.env["SMS_SHORTCODE"] || "",
+  SMS_PARTNER_ID: process.env["SMS_PARTNER_ID"] || "",
 } as const;
