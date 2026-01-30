@@ -15,7 +15,7 @@ export type UpdateClientIntegrationData = Partial<{
 export async function findAllByClientId(clientId: string) {
   return await prisma.clientIntegration.findMany({
     where: { clientId },
-    orderBy: { label: "asc" },
+    orderBy: { createdAt: "desc" },
   });
 }
 
@@ -37,7 +37,7 @@ export async function findById(id: string) {
 
 export async function create(
   data: CreateClientIntegrationData,
-  performedBy?: string
+  performedBy?: string,
 ) {
   const integration = await prisma.clientIntegration.create({
     data: {
@@ -72,7 +72,7 @@ export async function create(
 export async function update(
   id: string,
   data: UpdateClientIntegrationData,
-  performedBy?: string
+  performedBy?: string,
 ) {
   const existing = await prisma.clientIntegration.findUnique({
     where: { id },

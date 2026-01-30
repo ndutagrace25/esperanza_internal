@@ -4,7 +4,7 @@ import type { Role } from "@prisma/client";
 export async function findAll(): Promise<Role[]> {
   return prisma.role.findMany({
     orderBy: {
-      name: "asc",
+      createdAt: "desc",
     },
   });
 }

@@ -10,7 +10,7 @@ export async function findAll(): Promise<ExpenseCategory[]> {
       status: "active",
     },
     orderBy: {
-      name: "asc",
+      createdAt: "desc",
     },
   });
 }
@@ -27,7 +27,9 @@ export async function findById(id: string): Promise<ExpenseCategory | null> {
 /**
  * Find expense category by name
  */
-export async function findByName(name: string): Promise<ExpenseCategory | null> {
+export async function findByName(
+  name: string,
+): Promise<ExpenseCategory | null> {
   return prisma.expenseCategory.findUnique({
     where: { name },
   });
@@ -38,16 +40,47 @@ export async function findByName(name: string): Promise<ExpenseCategory | null> 
  * Uses fuzzy matching to map free-text categories to formal categories
  */
 export async function findMatchingCategory(
-  categoryText: string
+  categoryText: string,
 ): Promise<ExpenseCategory | null> {
   const lowerCategory = categoryText.toLowerCase();
 
   // Define mapping rules
   const mappings: Record<string, string[]> = {
-    Transport: ["transport", "fuel", "taxi", "uber", "parking", "matatu", "bus", "fare"],
-    "Meals & Entertainment": ["meal", "lunch", "dinner", "breakfast", "food", "entertainment", "snack"],
-    "Office Supplies": ["stationery", "supplies", "office", "paper", "pen", "printing"],
-    Utilities: ["utility", "utilities", "electricity", "water", "internet", "wifi"],
+    Transport: [
+      "transport",
+      "fuel",
+      "taxi",
+      "uber",
+      "parking",
+      "matatu",
+      "bus",
+      "fare",
+    ],
+    "Meals & Entertainment": [
+      "meal",
+      "lunch",
+      "dinner",
+      "breakfast",
+      "food",
+      "entertainment",
+      "snack",
+    ],
+    "Office Supplies": [
+      "stationery",
+      "supplies",
+      "office",
+      "paper",
+      "pen",
+      "printing",
+    ],
+    Utilities: [
+      "utility",
+      "utilities",
+      "electricity",
+      "water",
+      "internet",
+      "wifi",
+    ],
     Equipment: ["equipment", "hardware", "tool", "machine"],
     "Software & Subscriptions": ["software", "subscription", "license", "saas"],
     Communication: ["airtime", "data", "phone", "call", "sms", "bundle"],
@@ -69,4 +102,3 @@ export async function findMatchingCategory(
   // Default to Miscellaneous if no match found
   return findByName("Miscellaneous");
 }
-

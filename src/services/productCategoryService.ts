@@ -8,7 +8,10 @@ export type CreateProductCategoryData = Omit<
 >;
 
 export type UpdateProductCategoryData = Partial<
-  Omit<Prisma.ProductCategoryUpdateInput, "createdAt" | "updatedAt" | "products">
+  Omit<
+    Prisma.ProductCategoryUpdateInput,
+    "createdAt" | "updatedAt" | "products"
+  >
 >;
 
 export async function findAll(): Promise<ProductCategory[]> {
@@ -19,7 +22,7 @@ export async function findAll(): Promise<ProductCategory[]> {
       },
     },
     orderBy: {
-      name: "asc",
+      createdAt: "desc",
     },
   });
 }
@@ -30,7 +33,9 @@ export async function findById(id: string): Promise<ProductCategory | null> {
   });
 }
 
-export async function findByName(name: string): Promise<ProductCategory | null> {
+export async function findByName(
+  name: string,
+): Promise<ProductCategory | null> {
   return prisma.productCategory.findUnique({
     where: { name },
   });
@@ -38,7 +43,7 @@ export async function findByName(name: string): Promise<ProductCategory | null> 
 
 export async function create(
   data: CreateProductCategoryData,
-  performedBy?: string
+  performedBy?: string,
 ): Promise<ProductCategory> {
   const category = await prisma.productCategory.create({
     data,
@@ -59,7 +64,7 @@ export async function create(
 export async function update(
   id: string,
   data: UpdateProductCategoryData,
-  performedBy?: string
+  performedBy?: string,
 ): Promise<ProductCategory> {
   // Get old data for logging
   const oldCategory = await prisma.productCategory.findUnique({
@@ -86,7 +91,7 @@ export async function update(
 
 export async function deleteProductCategory(
   id: string,
-  performedBy?: string
+  performedBy?: string,
 ): Promise<ProductCategory> {
   // Get old data for logging
   const oldCategory = await prisma.productCategory.findUnique({
@@ -117,4 +122,3 @@ export async function deleteProductCategory(
 
   return category;
 }
-
