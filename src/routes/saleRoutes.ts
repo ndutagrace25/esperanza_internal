@@ -36,4 +36,21 @@ router.patch("/items/:id", authorize("DIRECTOR"), saleController.updateItem);
 // Only DIRECTOR role can delete sale items
 router.delete("/items/:id", authorize("DIRECTOR"), saleController.deleteItem);
 
+// Sale Installment operations (installments path before :id for PATCH/DELETE)
+router.post(
+  "/:saleId/installments",
+  authorize("DIRECTOR"),
+  saleController.createInstallment
+);
+router.patch(
+  "/installments/:id",
+  authorize("DIRECTOR"),
+  saleController.updateInstallment
+);
+router.delete(
+  "/installments/:id",
+  authorize("DIRECTOR"),
+  saleController.deleteInstallment
+);
+
 export default router;

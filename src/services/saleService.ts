@@ -3,12 +3,19 @@ import { Prisma } from "@prisma/client";
 import type { Sale } from "@prisma/client";
 import { createLog } from "./systemLogService.js";
 
+export type FirstInstallmentData = {
+  amount: number | string;
+  paidAt?: string | Date;
+  notes?: string | null;
+};
+
 export type CreateSaleData = Omit<
   Prisma.SaleCreateInput,
   "client" | "items" | "createdAt" | "updatedAt" | "saleNumber" | "totalAmount"
 > & {
   clientId: string;
   items?: Array<Omit<CreateSaleItemData, "saleId">>;
+  firstInstallment?: FirstInstallmentData;
 };
 
 export type UpdateSaleData = Partial<
@@ -55,6 +62,18 @@ export type PaginatedResult<T> = {
   };
 };
 
+type SaleInstallmentRow = {
+  id: string;
+  saleId: string;
+  amount: Prisma.Decimal;
+  dueDate: Date | null;
+  paidAt: Date;
+  status: string;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 type SaleWithRelations = {
   id: string;
   saleNumber: string;
@@ -69,6 +88,9 @@ type SaleWithRelations = {
   saleDate: Date;
   status: string;
   totalAmount: Prisma.Decimal;
+  agreedMonthlyInstallmentAmount: Prisma.Decimal | null;
+  paidAmount: Prisma.Decimal;
+  completedAt: Date | null;
   notes: string | null;
   items: Array<{
     id: string;
@@ -84,6 +106,7 @@ type SaleWithRelations = {
     unitPrice: Prisma.Decimal;
     totalPrice: Prisma.Decimal;
   }>;
+  installments: SaleInstallmentRow[];
   createdAt: Date;
   updatedAt: Date;
 };
@@ -177,6 +200,9 @@ export async function findAll(
       saleDate: true,
       status: true,
       totalAmount: true,
+      agreedMonthlyInstallmentAmount: true,
+      paidAmount: true,
+      completedAt: true,
       notes: true,
       items: {
         select: {
@@ -198,6 +224,20 @@ export async function findAll(
         orderBy: {
           createdAt: "asc",
         },
+      },
+      installments: {
+        select: {
+          id: true,
+          saleId: true,
+          amount: true,
+          dueDate: true,
+          paidAt: true,
+          status: true,
+          notes: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: { paidAt: "asc" },
       },
       createdAt: true,
       updatedAt: true,
@@ -241,6 +281,9 @@ export async function findById(id: string): Promise<SaleWithRelations | null> {
       saleDate: true,
       status: true,
       totalAmount: true,
+      agreedMonthlyInstallmentAmount: true,
+      paidAmount: true,
+      completedAt: true,
       notes: true,
       items: {
         select: {
@@ -262,6 +305,20 @@ export async function findById(id: string): Promise<SaleWithRelations | null> {
         orderBy: {
           createdAt: "asc",
         },
+      },
+      installments: {
+        select: {
+          id: true,
+          saleId: true,
+          amount: true,
+          dueDate: true,
+          paidAt: true,
+          status: true,
+          notes: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: { paidAt: "asc" },
       },
       createdAt: true,
       updatedAt: true,
@@ -290,6 +347,9 @@ export async function findBySaleNumber(
       saleDate: true,
       status: true,
       totalAmount: true,
+      agreedMonthlyInstallmentAmount: true,
+      paidAmount: true,
+      completedAt: true,
       notes: true,
       items: {
         select: {
@@ -312,6 +372,20 @@ export async function findBySaleNumber(
           createdAt: "asc",
         },
       },
+      installments: {
+        select: {
+          id: true,
+          saleId: true,
+          amount: true,
+          dueDate: true,
+          paidAt: true,
+          status: true,
+          notes: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: { paidAt: "asc" },
+      },
       createdAt: true,
       updatedAt: true,
     },
@@ -321,8 +395,8 @@ export async function findBySaleNumber(
 export async function create(
   data: CreateSaleData,
   performedBy?: string
-): Promise<Sale> {
-  const { clientId, items, ...saleData } = data;
+): Promise<Sale | SaleWithRelations> {
+  const { clientId, items, firstInstallment, ...saleData } = data;
 
   // Validate that items are provided
   if (!items || items.length === 0) {
@@ -396,6 +470,20 @@ export async function create(
           createdAt: "asc",
         },
       },
+      installments: {
+        select: {
+          id: true,
+          saleId: true,
+          amount: true,
+          dueDate: true,
+          paidAt: true,
+          status: true,
+          notes: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: { paidAt: "asc" },
+      },
     },
   });
 
@@ -420,6 +508,29 @@ export async function create(
         metadata: JSON.stringify({ saleId: sale.id }),
       });
     }
+  }
+
+  // Optionally add first installment (e.g. deposit paid at creation)
+  const amount = firstInstallment?.amount != null ? Number(firstInstallment.amount) : 0;
+  if (amount > 0) {
+    const total = Number(sale.totalAmount);
+    if (amount > total) {
+      throw new Error("First installment amount cannot exceed the sale total");
+    }
+    await createInstallment(
+      sale.id,
+      {
+        amount: firstInstallment!.amount,
+        paidAt: firstInstallment!.paidAt
+          ? new Date(firstInstallment.paidAt)
+          : undefined,
+        notes: firstInstallment!.notes ?? undefined,
+        status: "PAID",
+      },
+      performedBy
+    );
+    const updated = await findById(sale.id);
+    return updated ?? sale;
   }
 
   return sale;
@@ -494,6 +605,20 @@ export async function update(
         orderBy: {
           createdAt: "asc",
         },
+      },
+      installments: {
+        select: {
+          id: true,
+          saleId: true,
+          amount: true,
+          dueDate: true,
+          paidAt: true,
+          status: true,
+          notes: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: { paidAt: "asc" },
       },
     },
   });
@@ -738,6 +863,151 @@ export async function deleteItem(
     entityId: id,
     ...(performedBy && { performedBy }),
     oldData: existingItem,
+    metadata: JSON.stringify({ saleId }),
+  });
+}
+
+// --- Sale Installment types and helpers ---
+
+export type CreateSaleInstallmentData = {
+  amount: number | string | Prisma.Decimal;
+  dueDate?: Date | string | null;
+  paidAt?: Date | string;
+  status?: "PENDING" | "PAID";
+  notes?: string | null;
+};
+
+export type UpdateSaleInstallmentData = Partial<{
+  amount: number | string | Prisma.Decimal;
+  dueDate: Date | string | null;
+  paidAt: Date | string;
+  status: "PENDING" | "PAID";
+  notes: string | null;
+}>;
+
+/**
+ * Recalculate sale paidAmount from PAID installments and set status/completedAt when fully paid.
+ */
+async function recalcSalePaymentStatus(saleId: string): Promise<void> {
+  const sale = await prisma.sale.findUnique({
+    where: { id: saleId },
+    include: { installments: true },
+  });
+  if (!sale) return;
+
+  const paidSum = sale.installments
+    .filter((i) => i.status === "PAID")
+    .reduce((sum, i) => sum + Number(i.amount), 0);
+  const paidAmount = new Prisma.Decimal(paidSum);
+  const totalAmount = sale.totalAmount;
+  const isFullyPaid = paidAmount.gte(totalAmount);
+
+  await prisma.sale.update({
+    where: { id: saleId },
+    data: {
+      paidAmount,
+      ...(isFullyPaid
+        ? { status: "COMPLETED" as const, completedAt: new Date() }
+        : {
+            completedAt: null,
+            ...(sale.status === "COMPLETED"
+              ? { status: "PENDING" as const }
+              : {}),
+          }),
+    },
+  });
+}
+
+export async function createInstallment(
+  saleId: string,
+  data: CreateSaleInstallmentData,
+  performedBy?: string
+): Promise<SaleInstallmentRow> {
+  const sale = await prisma.sale.findUnique({ where: { id: saleId } });
+  if (!sale) throw new Error("Sale not found");
+
+  const amount = new Prisma.Decimal(data.amount);
+  const paidAt = data.paidAt ? new Date(data.paidAt) : new Date();
+  const status = data.status ?? "PAID";
+  const dueDate = data.dueDate != null ? new Date(data.dueDate) : null;
+
+  const installment = await prisma.saleInstallment.create({
+    data: {
+      saleId,
+      amount,
+      dueDate,
+      paidAt,
+      status,
+      notes: data.notes ?? null,
+    },
+  });
+
+  await recalcSalePaymentStatus(saleId);
+
+  await createLog({
+    action: "CREATE",
+    entityType: "SaleInstallment",
+    entityId: installment.id,
+    ...(performedBy && { performedBy }),
+    newData: installment,
+    metadata: JSON.stringify({ saleId }),
+  });
+
+  return installment as SaleInstallmentRow;
+}
+
+export async function updateInstallment(
+  id: string,
+  data: UpdateSaleInstallmentData,
+  performedBy?: string
+): Promise<SaleInstallmentRow> {
+  const existing = await prisma.saleInstallment.findUnique({ where: { id } });
+  if (!existing) throw new Error("Installment not found");
+
+  const updateData: Prisma.SaleInstallmentUpdateInput = {};
+  if (data.amount != null) updateData.amount = new Prisma.Decimal(data.amount);
+  if (data.dueDate !== undefined) updateData.dueDate = data.dueDate ? new Date(data.dueDate) : null;
+  if (data.paidAt != null) updateData.paidAt = new Date(data.paidAt);
+  if (data.status != null) updateData.status = data.status;
+  if (data.notes !== undefined) updateData.notes = data.notes;
+
+  const installment = await prisma.saleInstallment.update({
+    where: { id },
+    data: updateData,
+  });
+
+  await recalcSalePaymentStatus(existing.saleId);
+
+  await createLog({
+    action: "UPDATE",
+    entityType: "SaleInstallment",
+    entityId: id,
+    ...(performedBy && { performedBy }),
+    oldData: existing,
+    newData: installment,
+    metadata: JSON.stringify({ saleId: existing.saleId }),
+  });
+
+  return installment as SaleInstallmentRow;
+}
+
+export async function deleteInstallment(
+  id: string,
+  performedBy?: string
+): Promise<void> {
+  const existing = await prisma.saleInstallment.findUnique({ where: { id } });
+  if (!existing) throw new Error("Installment not found");
+  const saleId = existing.saleId;
+
+  await prisma.saleInstallment.delete({ where: { id } });
+  await recalcSalePaymentStatus(saleId);
+
+  await createLog({
+    action: "DELETE",
+    entityType: "SaleInstallment",
+    entityId: id,
+    ...(performedBy && { performedBy }),
+    oldData: existing,
     metadata: JSON.stringify({ saleId }),
   });
 }

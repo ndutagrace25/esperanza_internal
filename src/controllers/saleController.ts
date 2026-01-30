@@ -231,3 +231,81 @@ export async function deleteItem(
   }
 }
 
+// Sale Installment operations
+export async function createInstallment(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const { saleId } = req.params;
+    if (!saleId) {
+      res.status(400).json({ error: "Sale ID is required" });
+      return;
+    }
+
+    const installment = await saleService.createInstallment(
+      saleId,
+      req.body,
+      req.employee?.id
+    );
+    res.status(201).json(installment);
+  } catch (error) {
+    console.error("Error creating installment:", error);
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : "Failed to create installment";
+    res.status(400).json({ error: errorMessage });
+  }
+}
+
+export async function updateInstallment(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      res.status(400).json({ error: "Installment ID is required" });
+      return;
+    }
+
+    const installment = await saleService.updateInstallment(
+      id,
+      req.body,
+      req.employee?.id
+    );
+    res.json(installment);
+  } catch (error) {
+    console.error("Error updating installment:", error);
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : "Failed to update installment";
+    res.status(400).json({ error: errorMessage });
+  }
+}
+
+export async function deleteInstallment(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      res.status(400).json({ error: "Installment ID is required" });
+      return;
+    }
+
+    await saleService.deleteInstallment(id, req.employee?.id);
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting installment:", error);
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : "Failed to delete installment";
+    res.status(400).json({ error: errorMessage });
+  }
+}
+
