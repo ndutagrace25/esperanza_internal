@@ -3,6 +3,7 @@ import { sendSingleSms } from "./smsService.js";
 
 const COMPANY_NAME = "ESPERANZA DIGITAL SOLUTIONS LTD";
 const BANK_ACCOUNT = "2053858417";
+const PAYBILL = "303030";
 
 /**
  * Normalize Kenyan mobile to 254XXXXXXXXX for SMS API.
@@ -11,9 +12,14 @@ function normalizeMobile(phone: string | null): string | null {
   if (!phone || !phone.trim()) return null;
   const digits = phone.replace(/\D/g, "");
   if (digits.length === 9 && digits.startsWith("7")) return `254${digits}`;
-  if (digits.length === 10 && digits.startsWith("0")) return `254${digits.slice(1)}`;
+  if (digits.length === 10 && digits.startsWith("0"))
+    return `254${digits.slice(1)}`;
   if (digits.length === 12 && digits.startsWith("254")) return digits;
-  return digits.length >= 9 ? (digits.startsWith("254") ? digits : `254${digits.slice(-9)}`) : null;
+  return digits.length >= 9
+    ? digits.startsWith("254")
+      ? digits
+      : `254${digits.slice(-9)}`
+    : null;
 }
 
 /**
@@ -59,7 +65,8 @@ export async function getSalesDueForReminder(now: Date = new Date()) {
   });
 
   const prevMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
-  const prevYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+  const prevYear =
+    now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
 
   return sales.filter((sale) => {
     const paid = Number(sale.paidAmount);
@@ -116,17 +123,24 @@ export async function sendPaymentReminders(now: Date = new Date()): Promise<{
 }> {
   const dueSales = await getSalesDueForReminder(now);
   const dueDateStr = getDueDateString(now);
-  const customerName = (c: { contactPerson: string | null; companyName: string }) =>
-    (c.contactPerson && c.contactPerson.trim()) || c.companyName || "Valued Customer";
+  const customerName = (c: {
+    contactPerson: string | null;
+    companyName: string;
+  }) =>
+    (c.contactPerson && c.contactPerson.trim()) ||
+    c.companyName ||
+    "Valued Customer";
 
   let sent = 0;
   let skipped = 0;
-  const errors: Array<{ saleNumber: string; client: string; reason: string }> = [];
+  const errors: Array<{ saleNumber: string; client: string; reason: string }> =
+    [];
   const clientNamesSent: string[] = [];
 
   for (const sale of dueSales) {
     const client = sale.client;
-    const mobile = normalizeMobile(client.phone) || normalizeMobile(client.alternatePhone);
+    const mobile =
+      normalizeMobile(client.phone) || normalizeMobile(client.alternatePhone);
 
     if (!mobile) {
       skipped++;
@@ -138,7 +152,9 @@ export async function sendPaymentReminders(now: Date = new Date()): Promise<{
       continue;
     }
 
-    const message = `Dear ${customerName(client)}, your monthly Ventura Prime ERP Software subscription is due for renewal on ${dueDateStr}.\nCompany name: ${COMPANY_NAME}\nBank account: ${BANK_ACCOUNT}`;
+    const message = `Dear ${customerName(
+      client
+    )}, your monthly Ventura Prime ERP Software subscription is due for renewal on ${dueDateStr}.\nCompany name: ${COMPANY_NAME}\nBank account: ${BANK_ACCOUNT}\nPaybill: ${PAYBILL}\nAccount number: ${BANK_ACCOUNT}`;
 
     try {
       await sendSingleSms({ message, mobile });
