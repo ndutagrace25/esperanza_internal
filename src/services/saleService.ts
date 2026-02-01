@@ -2,6 +2,11 @@ import { prisma } from "../lib/prisma.js";
 import { Prisma } from "@prisma/client";
 import type { Sale } from "@prisma/client";
 import { createLog } from "./systemLogService.js";
+import {
+  extendClientLicense,
+  updateClientLicenseExpiryOnly,
+  sendPaymentReceivedNotifications,
+} from "./clientLicenseService.js";
 
 export type FirstInstallmentData = {
   amount: number | string;
@@ -92,6 +97,8 @@ type SaleWithRelations = {
   paidAmount: Prisma.Decimal;
   completedAt: Date | null;
   notes: string | null;
+  requestedPaymentDateExtension: boolean;
+  paymentExtensionDueDate: Date | null;
   items: Array<{
     id: string;
     productId: string;
@@ -204,6 +211,8 @@ export async function findAll(
       paidAmount: true,
       completedAt: true,
       notes: true,
+      requestedPaymentDateExtension: true,
+      paymentExtensionDueDate: true,
       items: {
         select: {
           id: true,
@@ -285,6 +294,8 @@ export async function findById(id: string): Promise<SaleWithRelations | null> {
       paidAmount: true,
       completedAt: true,
       notes: true,
+      requestedPaymentDateExtension: true,
+      paymentExtensionDueDate: true,
       items: {
         select: {
           id: true,
@@ -351,6 +362,8 @@ export async function findBySaleNumber(
       paidAmount: true,
       completedAt: true,
       notes: true,
+      requestedPaymentDateExtension: true,
+      paymentExtensionDueDate: true,
       items: {
         select: {
           id: true,
@@ -569,6 +582,15 @@ export async function update(
   const items = existingSale.items;
   if (items.length > 0) {
     saleUpdateData.totalAmount = calculateTotalAmount(items);
+  }
+
+  // When user sets a payment extension date, extend the client's system license expiry via their API
+  const extensionDate =
+    typeof updateData.paymentExtensionDueDate === "string"
+      ? updateData.paymentExtensionDueDate.trim()
+      : null;
+  if (extensionDate && extensionDate.length > 0) {
+    await extendClientLicense(existingSale.clientId, extensionDate);
   }
 
   const updatedSale = await prisma.sale.update({
@@ -951,6 +973,59 @@ export async function createInstallment(
     newData: installment,
     metadata: JSON.stringify({ saleId }),
   });
+
+  // When a client pays an installment: update their license to next month 3rd and notify
+  const saleWithClient = await prisma.sale.findUnique({
+    where: { id: saleId },
+    select: {
+      clientId: true,
+      client: {
+        select: {
+          backendBaseUrl: true,
+          apiUserName: true,
+          apiPassword: true,
+        },
+      },
+    },
+  });
+  if (
+    saleWithClient?.client &&
+    saleWithClient.client.backendBaseUrl?.trim() &&
+    saleWithClient.client.apiUserName?.trim() &&
+    saleWithClient.client.apiPassword?.trim()
+  ) {
+    const y = paidAt.getUTCFullYear();
+    const m = paidAt.getUTCMonth();
+    const nextMonth3rd = new Date(
+      Date.UTC(y, m + 1, 3, 0, 0, 0, 0)
+    );
+    const licenseExpiryDateISO = nextMonth3rd.toISOString();
+    const newExpiryFormatted = nextMonth3rd.toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+    const currentMonthLabel = paidAt.toLocaleDateString("en-GB", {
+      month: "long",
+      year: "numeric",
+    });
+    try {
+      await updateClientLicenseExpiryOnly(
+        saleWithClient.clientId,
+        licenseExpiryDateISO
+      );
+      await sendPaymentReceivedNotifications(
+        saleWithClient.clientId,
+        currentMonthLabel,
+        newExpiryFormatted
+      );
+    } catch (err) {
+      console.error(
+        "[saleService] Failed to update client license or send payment-received notifications after installment:",
+        err
+      );
+    }
+  }
 
   return installment as SaleInstallmentRow;
 }

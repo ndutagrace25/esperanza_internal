@@ -3,6 +3,7 @@ import cors from "cors";
 import { env } from "./config/env.js";
 import routes from "./routes/index.js";
 import { startPaymentReminderCron } from "./jobs/paymentReminderCron.js";
+import { startPaymentExtensionReminderCron } from "./jobs/paymentExtensionReminderCron.js";
 
 const app = express();
 
@@ -40,4 +41,6 @@ app.listen(env.PORT, () => {
   );
   // Payment reminder SMS: 1st, 2nd, 3rd of every month at 8:00 AM (Africa/Nairobi)
   startPaymentReminderCron();
+  // Payment extension reminder: daily at 8:00 AM for sales with extension due in 1–3 days
+  startPaymentExtensionReminderCron();
 });

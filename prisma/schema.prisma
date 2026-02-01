@@ -86,6 +86,9 @@ model Client {
   postalCode      String?
   website         String?       // Company website
   taxId           String?       // Tax ID or VAT number
+  backendBaseUrl  String?
+  apiUserName     String?
+  apiPassword     String?
   status          ClientStatus  @default(active)
   notes           String?       // Additional notes about the client
   broughtInById   String?       // Employee who brought in the client
@@ -325,6 +328,8 @@ model Sale {
   notes           String?       // Additional notes about the sale
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+  requestedPaymentDateExtension Boolean  @default(false)
+  paymentExtensionDueDate DateTime? 
 
   // Relations
   items           SaleItem[]
