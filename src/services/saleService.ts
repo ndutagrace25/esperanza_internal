@@ -1027,6 +1027,15 @@ export async function createInstallment(
     }
   }
 
+  // Once the client pays an installment for the current month, clear the payment extension on the sale
+  await prisma.sale.update({
+    where: { id: saleId },
+    data: {
+      requestedPaymentDateExtension: false,
+      paymentExtensionDueDate: null,
+    },
+  });
+
   return installment as SaleInstallmentRow;
 }
 

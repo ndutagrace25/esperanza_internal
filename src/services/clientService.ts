@@ -50,6 +50,9 @@ type ClientWithRelations = {
   postalCode: string | null;
   website: string | null;
   taxId: string | null;
+  backendBaseUrl: string | null;
+  apiUserName: string | null;
+  apiPassword: string | null;
   status: string;
   notes: string | null;
   broughtInById: string | null;
@@ -107,6 +110,9 @@ export async function findAll(
       postalCode: true,
       website: true,
       taxId: true,
+      backendBaseUrl: true,
+      apiUserName: true,
+      apiPassword: true,
       status: true,
       notes: true,
       broughtInById: true,
