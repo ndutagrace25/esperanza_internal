@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import * as employeeService from "../services/employeeService.js";
+import { getParam } from "../utils/params.js";
 import { validateCanModifyEmployee } from "../utils/permissions.js";
 
 export async function getAll(req: Request, res: Response): Promise<void> {
@@ -38,7 +39,7 @@ export async function getAll(req: Request, res: Response): Promise<void> {
 
 export async function getById(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Employee ID is required" });
       return;
@@ -70,7 +71,7 @@ export async function create(req: Request, res: Response): Promise<void> {
 
 export async function update(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Employee ID is required" });
       return;
@@ -100,7 +101,7 @@ export async function deleteEmployee(
   res: Response
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Employee ID is required" });
       return;

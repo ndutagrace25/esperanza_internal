@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { getParam } from "../utils/params.js";
 import * as jobCardService from "../services/jobCardService.js";
 import { generateJobCardPdf } from "../services/jobCardPdfService.js";
 
@@ -60,7 +61,7 @@ export async function getAll(req: Request, res: Response): Promise<void> {
 
 export async function getById(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Job card ID is required" });
       return;
@@ -85,7 +86,7 @@ export async function getByJobNumber(
   res: Response
 ): Promise<void> {
   try {
-    const { jobNumber } = req.params;
+    const jobNumber = getParam(req.params["jobNumber"]);
     if (!jobNumber) {
       res.status(400).json({ error: "Job number is required" });
       return;
@@ -119,7 +120,7 @@ export async function create(req: Request, res: Response): Promise<void> {
 
 export async function update(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Job card ID is required" });
       return;
@@ -150,7 +151,7 @@ export async function deleteJobCard(
   res: Response
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Job card ID is required" });
       return;
@@ -169,7 +170,7 @@ export async function deleteJobCard(
 // JobTask controllers
 export async function createTask(req: Request, res: Response): Promise<void> {
   try {
-    const { jobCardId } = req.params;
+    const jobCardId = getParam(req.params["jobCardId"]);
     if (!jobCardId) {
       res.status(400).json({ error: "Job card ID is required" });
       return;
@@ -190,7 +191,7 @@ export async function createTask(req: Request, res: Response): Promise<void> {
 
 export async function updateTask(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Task ID is required" });
       return;
@@ -212,7 +213,7 @@ export async function updateTask(req: Request, res: Response): Promise<void> {
 
 export async function deleteTask(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Task ID is required" });
       return;
@@ -234,7 +235,7 @@ export async function createExpense(
   res: Response
 ): Promise<void> {
   try {
-    const { jobCardId } = req.params;
+    const jobCardId = getParam(req.params["jobCardId"]);
     if (!jobCardId) {
       res.status(400).json({ error: "Job card ID is required" });
       return;
@@ -258,7 +259,7 @@ export async function updateExpense(
   res: Response
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Expense ID is required" });
       return;
@@ -283,7 +284,7 @@ export async function deleteExpense(
   res: Response
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Expense ID is required" });
       return;
@@ -305,7 +306,7 @@ export async function createApproval(
   res: Response
 ): Promise<void> {
   try {
-    const { jobCardId } = req.params;
+    const jobCardId = getParam(req.params["jobCardId"]);
     if (!jobCardId) {
       res.status(400).json({ error: "Job card ID is required" });
       return;
@@ -329,7 +330,7 @@ export async function updateApproval(
   res: Response
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Approval ID is required" });
       return;
@@ -354,7 +355,7 @@ export async function deleteApproval(
   res: Response
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Approval ID is required" });
       return;
@@ -372,7 +373,7 @@ export async function deleteApproval(
 
 export async function downloadPdf(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
 
     if (!id) {
       res.status(400).json({ error: "Job card ID is required" });

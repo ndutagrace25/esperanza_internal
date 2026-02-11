@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import * as productCategoryService from "../services/productCategoryService.js";
+import { getParam } from "../utils/params.js";
 
 export async function getAll(_req: Request, res: Response): Promise<void> {
   try {
@@ -13,7 +14,7 @@ export async function getAll(_req: Request, res: Response): Promise<void> {
 
 export async function getById(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Category ID is required" });
       return;
@@ -52,7 +53,7 @@ export async function create(req: Request, res: Response): Promise<void> {
 
 export async function update(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Category ID is required" });
       return;
@@ -79,7 +80,7 @@ export async function deleteProductCategory(
   res: Response
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Category ID is required" });
       return;

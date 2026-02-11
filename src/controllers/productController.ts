@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import * as productService from "../services/productService.js";
+import { getParam } from "../utils/params.js";
 
 export async function getAll(req: Request, res: Response): Promise<void> {
   try {
@@ -37,7 +38,7 @@ export async function getAll(req: Request, res: Response): Promise<void> {
 
 export async function getById(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Product ID is required" });
       return;
@@ -71,7 +72,7 @@ export async function create(req: Request, res: Response): Promise<void> {
 
 export async function update(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Product ID is required" });
       return;
@@ -96,7 +97,7 @@ export async function deleteProduct(
   res: Response
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Product ID is required" });
       return;

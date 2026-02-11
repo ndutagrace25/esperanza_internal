@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import * as expenseService from "../services/expenseService.js";
 import * as expenseCategoryService from "../services/expenseCategoryService.js";
 import type { ExpenseStatus } from "@prisma/client";
+import { getParam } from "../utils/params.js";
 
 // Helper to parse query params
 function parseQueryParam(param: unknown): string | undefined {
@@ -77,7 +78,7 @@ export async function getAll(req: Request, res: Response): Promise<void> {
  */
 export async function getById(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Expense ID is required" });
       return;
@@ -105,7 +106,7 @@ export async function getByExpenseNumber(
   res: Response
 ): Promise<void> {
   try {
-    const { expenseNumber } = req.params;
+    const expenseNumber = getParam(req.params["expenseNumber"]);
     if (!expenseNumber) {
       res.status(400).json({ error: "Expense number is required" });
       return;
@@ -195,7 +196,7 @@ export async function create(req: Request, res: Response): Promise<void> {
  */
 export async function update(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Expense ID is required" });
       return;
@@ -251,7 +252,7 @@ export async function update(req: Request, res: Response): Promise<void> {
  */
 export async function approve(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Expense ID is required" });
       return;
@@ -276,7 +277,7 @@ export async function approve(req: Request, res: Response): Promise<void> {
  */
 export async function markAsPaid(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Expense ID is required" });
       return;
@@ -301,7 +302,7 @@ export async function markAsPaid(req: Request, res: Response): Promise<void> {
  */
 export async function reject(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Expense ID is required" });
       return;
@@ -332,7 +333,7 @@ export async function reject(req: Request, res: Response): Promise<void> {
  */
 export async function cancel(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Expense ID is required" });
       return;
@@ -356,7 +357,7 @@ export async function deleteExpense(
   res: Response
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Expense ID is required" });
       return;
@@ -398,7 +399,7 @@ export async function getCategoryById(
   res: Response
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Category ID is required" });
       return;

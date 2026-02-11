@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import * as clientIntegrationService from "../services/clientIntegrationService.js";
+import { getParam } from "../utils/params.js";
 
 export async function getByClientId(req: Request, res: Response): Promise<void> {
   try {
@@ -21,7 +22,7 @@ export async function getByClientId(req: Request, res: Response): Promise<void> 
 
 export async function getById(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Integration ID is required" });
       return;
@@ -60,7 +61,7 @@ export async function create(req: Request, res: Response): Promise<void> {
 
 export async function update(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Integration ID is required" });
       return;
@@ -84,7 +85,7 @@ export async function update(req: Request, res: Response): Promise<void> {
 
 export async function remove(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Integration ID is required" });
       return;

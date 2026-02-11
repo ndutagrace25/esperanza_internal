@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import * as saleService from "../services/saleService.js";
+import { getParam } from "../utils/params.js";
 
 export async function getAll(req: Request, res: Response): Promise<void> {
   try {
@@ -53,7 +54,7 @@ export async function getAll(req: Request, res: Response): Promise<void> {
 
 export async function getById(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Sale ID is required" });
       return;
@@ -78,7 +79,7 @@ export async function getBySaleNumber(
   res: Response
 ): Promise<void> {
   try {
-    const { saleNumber } = req.params;
+    const saleNumber = getParam(req.params["saleNumber"]);
     if (!saleNumber) {
       res.status(400).json({ error: "Sale number is required" });
       return;
@@ -112,7 +113,7 @@ export async function create(req: Request, res: Response): Promise<void> {
 
 export async function update(req: Request, res: Response): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Sale ID is required" });
       return;
@@ -137,7 +138,7 @@ export async function deleteSale(
   res: Response
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Sale ID is required" });
       return;
@@ -159,7 +160,7 @@ export async function createItem(
   res: Response
 ): Promise<void> {
   try {
-    const { saleId } = req.params;
+    const saleId = getParam(req.params["saleId"]);
     if (!saleId) {
       res.status(400).json({ error: "Sale ID is required" });
       return;
@@ -186,7 +187,7 @@ export async function updateItem(
   res: Response
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Sale item ID is required" });
       return;
@@ -213,7 +214,7 @@ export async function deleteItem(
   res: Response
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Sale item ID is required" });
       return;
@@ -237,7 +238,7 @@ export async function createInstallment(
   res: Response
 ): Promise<void> {
   try {
-    const { saleId } = req.params;
+    const saleId = getParam(req.params["saleId"]);
     if (!saleId) {
       res.status(400).json({ error: "Sale ID is required" });
       return;
@@ -264,7 +265,7 @@ export async function updateInstallment(
   res: Response
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Installment ID is required" });
       return;
@@ -291,7 +292,7 @@ export async function deleteInstallment(
   res: Response
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Installment ID is required" });
       return;
