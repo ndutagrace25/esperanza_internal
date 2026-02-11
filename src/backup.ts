@@ -9,8 +9,8 @@ import dotenv from "dotenv";
 dotenv.config();
 const execAsync = promisify(exec);
 
-const BACKUP_DIR = process.env.BACKUP_DIR || "C:/pg_backups";
-const PG_DUMP_PATH = process.env.PG_DUMP_PATH || "pg_dump";
+const BACKUP_DIR = process.env["BACKUP_DIR"] || "C:/pg_backups";
+const PG_DUMP_PATH = process.env["PG_DUMP_PATH"] || "pg_dump";
 
 async function runBackup() {
   if (!fs.existsSync(BACKUP_DIR)) {
@@ -19,7 +19,7 @@ async function runBackup() {
 
   const now = new Date();
   const dateStr = now.toISOString().replace(/:/g, "-");
-  const fileName = `${process.env.BUCKUP_FILE_NAME}-${dateStr}.sql`;
+  const fileName = `${process.env["BUCKUP_FILE_NAME"]}-${dateStr}.sql`;
   const filePath = path.join(BACKUP_DIR, fileName);
 
   const {
@@ -57,7 +57,7 @@ async function runBackup() {
     await transporter.sendMail({
       from: EMAIL_USER,
       to: EMAIL_SEND_TO,
-      subject: `Daily ${process.env.BUCKUP_FILE_NAME} PostgreSQL Backup - ${dateStr}`,
+      subject: `Daily ${process.env["BUCKUP_FILE_NAME"]} PostgreSQL Backup - ${dateStr}`,
       text: "Attached is your daily backup.",
       attachments: [{ filename: fileName, path: filePath }],
     });
@@ -77,7 +77,7 @@ cron.schedule("0 3 * * *", () => {
 });
 
 // Run immediately on startup to test (optional)
-if (process.env.RUN_IMMEDIATELY === "true") {
+if (process.env["RUN_IMMEDIATELY"] === "true") {
   runBackup();
 }
 
