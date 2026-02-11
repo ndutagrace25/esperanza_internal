@@ -311,21 +311,19 @@ export async function sendPaymentExtensionReminders(
   }
 
   let directorSummarySent = 0;
-  const directors = await getDirectorsWithPhone();
-  const clientList = formatClientList(clientNamesSent);
-
-  for (const director of directors) {
-    const mobile = normalizeMobile(director.phone);
-    if (!mobile) continue;
-    const personalised =
-      sent === 0
-        ? `Hi ${director.firstName}, no payment extension reminders were sent today.`
-        : `Hi ${director.firstName}, clients ${clientList} have received their payment extension reminder (due in 1–3 days).`;
-    try {
-      await sendSingleSms({ message: personalised, mobile });
-      directorSummarySent++;
-    } catch {
-      // Log but don't fail the whole run
+  if (sent > 0) {
+    const directors = await getDirectorsWithPhone();
+    const clientList = formatClientList(clientNamesSent);
+    for (const director of directors) {
+      const mobile = normalizeMobile(director.phone);
+      if (!mobile) continue;
+      const personalised = `Hi ${director.firstName}, clients ${clientList} have received their payment extension reminder (due in 1–3 days).`;
+      try {
+        await sendSingleSms({ message: personalised, mobile });
+        directorSummarySent++;
+      } catch {
+        // Log but don't fail the whole run
+      }
     }
   }
 
