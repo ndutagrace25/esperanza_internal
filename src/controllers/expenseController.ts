@@ -126,6 +126,47 @@ export async function getByExpenseNumber(
   }
 }
 
+export async function getMyUnpaidSummary(req: Request, res: Response): Promise<void> {
+  try {
+    const employeeId = req.employee?.id;
+    if (!employeeId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const startDate = parseDateParam(req.query["startDate"]);
+    const endDate = parseDateParam(req.query["endDate"]);
+
+    const summary = await expenseService.getMyUnpaidExpenseSummary(employeeId, {
+      ...(startDate && { startDate }),
+      ...(endDate && { endDate }),
+    });
+    res.json(summary);
+  } catch (error) {
+    console.error("Error fetching my unpaid expense summary:", error);
+    res.status(500).json({ error: "Failed to fetch your expense summary" });
+  }
+}
+
+/**
+ * Unpaid expenses (excl. rejected/paid/cancelled), grouped by employee + grand totals
+ */
+export async function getUnpaidSummary(req: Request, res: Response): Promise<void> {
+  try {
+    const startDate = parseDateParam(req.query["startDate"]);
+    const endDate = parseDateParam(req.query["endDate"]);
+
+    const summary = await expenseService.getUnpaidSummaryByEmployee({
+      ...(startDate && { startDate }),
+      ...(endDate && { endDate }),
+    });
+    res.json(summary);
+  } catch (error) {
+    console.error("Error fetching unpaid expense summary:", error);
+    res.status(500).json({ error: "Failed to fetch unpaid expense summary" });
+  }
+}
+
 /**
  * Create a new standalone expense (not linked to job card)
  * Job card expenses are automatically created via jobCardService

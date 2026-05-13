@@ -79,6 +79,56 @@ export type PaginatedResult<T> = {
   };
 };
 
+/** Pending / approved-but-not-paid — excludes PAID, REJECTED, CANCELLED */
+const UNPAID_EXPENSE_STATUSES: ExpenseStatus[] = [
+  "DRAFT",
+  "PENDING",
+  "APPROVED",
+];
+
+export type UnpaidExpenseSummaryOptions = {
+  startDate?: Date;
+  endDate?: Date;
+};
+
+export type UnpaidSummaryEmployee = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+};
+
+export type UnpaidExpenseSummaryStatusRow = {
+  status: ExpenseStatus;
+  expenseCount: number;
+  totalAmount: string;
+};
+
+export type UnpaidExpenseSummaryByEmployeeRow = {
+  employee: UnpaidSummaryEmployee | null;
+  byStatus: UnpaidExpenseSummaryStatusRow[];
+  totals: {
+    expenseCount: number;
+    totalAmount: string;
+  };
+};
+
+export type UnpaidExpenseSummaryByEmployee = {
+  byEmployee: UnpaidExpenseSummaryByEmployeeRow[];
+  totals: {
+    expenseCount: number;
+    totalAmount: string;
+  };
+};
+
+export type MyUnpaidExpenseSummary = {
+  byStatus: UnpaidExpenseSummaryStatusRow[];
+  totals: {
+    expenseCount: number;
+    totalAmount: string;
+  };
+};
+
 type ExpenseWithRelations = {
   id: string;
   expenseNumber: string;
@@ -418,6 +468,208 @@ export async function findAll(
       limit,
       total,
       totalPages,
+    },
+  };
+}
+
+/**
+ * Unpaid expense totals grouped by submitting employee (rejected/paid/cancelled excluded).
+ * Only expenses submitted by employees with status `active` are included
+ * (`on_leave` and `terminated` submitters are excluded). Expenses with no submitter are excluded.
+ */
+export async function getUnpaidSummaryByEmployee(
+  options: UnpaidExpenseSummaryOptions = {}
+): Promise<UnpaidExpenseSummaryByEmployee> {
+  const where: Prisma.ExpenseWhereInput = {
+    status: { in: UNPAID_EXPENSE_STATUSES },
+    submittedBy: {
+      status: "active",
+    },
+  };
+
+  if (options.startDate || options.endDate) {
+    where.expenseDate = {};
+    if (options.startDate) {
+      where.expenseDate.gte = options.startDate;
+    }
+    if (options.endDate) {
+      where.expenseDate.lte = options.endDate;
+    }
+  }
+
+  const groups = await prisma.expense.groupBy({
+    by: ["submittedById", "status"],
+    where,
+    _sum: { amount: true },
+    _count: { _all: true },
+  });
+
+  const employeeIds = [
+    ...new Set(
+      groups.map((g) => g.submittedById).filter((id): id is string => id !== null)
+    ),
+  ];
+
+  const employees =
+    employeeIds.length > 0
+      ? await prisma.employee.findMany({
+          where: { id: { in: employeeIds } },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        })
+      : [];
+
+  const employeeById = new Map(employees.map((e) => [e.id, e]));
+
+  type EmpBucket = {
+    submittedById: string | null;
+    byStatus: UnpaidExpenseSummaryStatusRow[];
+  };
+
+  const bucketByKey = new Map<string, EmpBucket>();
+
+  let totalsCount = 0;
+  let totalsAmount = new Prisma.Decimal(0);
+
+  for (const g of groups) {
+    const rowAmount = g._sum.amount ?? new Prisma.Decimal(0);
+    totalsCount += g._count._all;
+    totalsAmount = totalsAmount.add(rowAmount);
+
+    const key = g.submittedById ?? "__none__";
+    let bucket = bucketByKey.get(key);
+    if (!bucket) {
+      bucket = { submittedById: g.submittedById, byStatus: [] };
+      bucketByKey.set(key, bucket);
+    }
+    bucket.byStatus.push({
+      status: g.status,
+      expenseCount: g._count._all,
+      totalAmount: rowAmount.toString(),
+    });
+  }
+
+  function resolveEmployee(submittedById: string | null): UnpaidSummaryEmployee | null {
+    if (!submittedById) {
+      return null;
+    }
+    const emp = employeeById.get(submittedById);
+    if (emp) {
+      return {
+        id: emp.id,
+        firstName: emp.firstName,
+        lastName: emp.lastName,
+        email: emp.email,
+      };
+    }
+    return {
+      id: submittedById,
+      firstName: "Unknown",
+      lastName: "employee",
+      email: "",
+    };
+  }
+
+  const byEmployee: UnpaidExpenseSummaryByEmployeeRow[] = [];
+
+  for (const { submittedById, byStatus } of bucketByKey.values()) {
+    byStatus.sort(
+      (a, b) =>
+        UNPAID_EXPENSE_STATUSES.indexOf(a.status) -
+        UNPAID_EXPENSE_STATUSES.indexOf(b.status)
+    );
+
+    let expenseCount = 0;
+    let totalAmount = new Prisma.Decimal(0);
+    for (const row of byStatus) {
+      expenseCount += row.expenseCount;
+      totalAmount = totalAmount.add(new Prisma.Decimal(row.totalAmount));
+    }
+
+    byEmployee.push({
+      employee: resolveEmployee(submittedById),
+      byStatus,
+      totals: {
+        expenseCount,
+        totalAmount: totalAmount.toString(),
+      },
+    });
+  }
+
+  byEmployee.sort((a, b) =>
+    new Prisma.Decimal(b.totals.totalAmount).comparedTo(
+      new Prisma.Decimal(a.totals.totalAmount)
+    )
+  );
+
+  return {
+    byEmployee,
+    totals: {
+      expenseCount: totalsCount,
+      totalAmount: totalsAmount.toString(),
+    },
+  };
+}
+
+/**
+ * Unpaid expense summary for a single submitter (e.g. logged-in employee).
+ * Same status rules as org summary; scoped by submittedById only.
+ */
+export async function getMyUnpaidExpenseSummary(
+  submittedById: string,
+  options: UnpaidExpenseSummaryOptions = {}
+): Promise<MyUnpaidExpenseSummary> {
+  const where: Prisma.ExpenseWhereInput = {
+    status: { in: UNPAID_EXPENSE_STATUSES },
+    submittedById,
+  };
+
+  if (options.startDate || options.endDate) {
+    where.expenseDate = {};
+    if (options.startDate) {
+      where.expenseDate.gte = options.startDate;
+    }
+    if (options.endDate) {
+      where.expenseDate.lte = options.endDate;
+    }
+  }
+
+  const groups = await prisma.expense.groupBy({
+    by: ["status"],
+    where,
+    _sum: { amount: true },
+    _count: { _all: true },
+  });
+
+  let totalsCount = 0;
+  let totalsAmount = new Prisma.Decimal(0);
+
+  const byStatus: UnpaidExpenseSummaryStatusRow[] = groups.map((g) => {
+    const rowAmount = g._sum.amount ?? new Prisma.Decimal(0);
+    totalsCount += g._count._all;
+    totalsAmount = totalsAmount.add(rowAmount);
+    return {
+      status: g.status,
+      expenseCount: g._count._all,
+      totalAmount: rowAmount.toString(),
+    };
+  });
+
+  byStatus.sort(
+    (a, b) =>
+      UNPAID_EXPENSE_STATUSES.indexOf(a.status) -
+      UNPAID_EXPENSE_STATUSES.indexOf(b.status)
+  );
+
+  return {
+    byStatus,
+    totals: {
+      expenseCount: totalsCount,
+      totalAmount: totalsAmount.toString(),
     },
   };
 }

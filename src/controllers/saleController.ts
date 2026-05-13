@@ -2,6 +2,13 @@ import type { Request, Response } from "express";
 import * as saleService from "../services/saleService.js";
 import { getParam } from "../utils/params.js";
 
+function parseQueryParam(param: unknown): string | undefined {
+  if (param === undefined) return undefined;
+  if (Array.isArray(param)) return param[0] as string;
+  if (typeof param === "string" && param.trim() !== "") return param;
+  return undefined;
+}
+
 export async function getAll(req: Request, res: Response): Promise<void> {
   try {
     // Get pagination parameters from query string
@@ -41,14 +48,27 @@ export async function getAll(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    const search = parseQueryParam(req.query["search"]);
+
     const result = await saleService.findAll({
       ...(page !== undefined && { page }),
       ...(limit !== undefined && { limit }),
+      ...(search && { search }),
     });
     res.json(result);
   } catch (error) {
     console.error("Error fetching sales:", error);
     res.status(500).json({ error: "Failed to fetch sales" });
+  }
+}
+
+export async function getUnpaidTotals(_req: Request, res: Response): Promise<void> {
+  try {
+    const totals = await saleService.getUnpaidSalesTotals();
+    res.json(totals);
+  } catch (error) {
+    console.error("Error fetching unpaid sales totals:", error);
+    res.status(500).json({ error: "Failed to fetch unpaid sales totals" });
   }
 }
 

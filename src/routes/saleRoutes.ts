@@ -6,6 +6,11 @@ const router = Router();
 
 // All authenticated users can view sales
 router.get("/", authorize("DIRECTOR"), saleController.getAll);
+router.get(
+  "/unpaid-totals",
+  authorize("DIRECTOR"),
+  saleController.getUnpaidTotals
+);
 
 // Get sale by sale number (before /:id route to avoid conflicts)
 router.get(

@@ -55,6 +55,8 @@ export type UpdateSaleItemData = Partial<
 export type PaginationOptions = {
   page?: number;
   limit?: number;
+  /** Case-insensitive search on sale number, client fields, and line-item products */
+  search?: string;
 };
 
 export type PaginatedResult<T> = {
@@ -66,6 +68,57 @@ export type PaginatedResult<T> = {
     totalPages: number;
   };
 };
+
+export type UnpaidSalesTotals = {
+  /** Sales with remaining balance (not cancelled, still owe money) */
+  saleCount: number;
+  /** Sum of paidAmount on those sales (partial payments to date) */
+  totalPaid: string;
+  /** Sum of (totalAmount minus paidAmount) across those sales */
+  totalOutstanding: string;
+};
+
+/**
+ * Aggregate unpaid balance: non-cancelled sales where paidAmount is below totalAmount.
+ * totalPaid is the sum of amounts already collected on those same sales.
+ */
+export async function getUnpaidSalesTotals(): Promise<UnpaidSalesTotals> {
+  const rows = await prisma.$queryRaw<
+    [
+      {
+        sale_count: bigint;
+        total_paid: unknown;
+        total_outstanding: unknown;
+      },
+    ]
+  >(Prisma.sql`
+    SELECT
+      COUNT(*)::bigint AS sale_count,
+      COALESCE(SUM("paidAmount"), 0) AS total_paid,
+      COALESCE(SUM("totalAmount" - "paidAmount"), 0) AS total_outstanding
+    FROM "sales"
+    WHERE "status" <> 'CANCELLED'::"SaleStatus"
+      AND "totalAmount" > "paidAmount"
+  `);
+
+  const row = rows[0];
+  if (!row) {
+    return { saleCount: 0, totalPaid: "0", totalOutstanding: "0" };
+  }
+
+  const toStr = (raw: unknown) =>
+    raw == null
+      ? "0"
+      : raw instanceof Prisma.Decimal
+        ? raw.toString()
+        : String(raw);
+
+  return {
+    saleCount: Number(row.sale_count),
+    totalPaid: toStr(row.total_paid),
+    totalOutstanding: toStr(row.total_outstanding),
+  };
+}
 
 type SaleInstallmentRow = {
   id: string;
@@ -180,16 +233,57 @@ export async function findAll(
   const limit = options.limit ?? 10;
   const skip = (page - 1) * limit;
 
-  // Get total count (excluding cancelled)
-  const total = await prisma.sale.count({
-    where: {
-      status: {
-        not: "CANCELLED",
-      },
-    },
-  });
+  const searchRaw = options.search?.trim();
+  const searchTerm = searchRaw && searchRaw.length > 0 ? searchRaw : undefined;
 
-  // Get paginated sales (excluding cancelled)
+  const baseWhere: Prisma.SaleWhereInput = {
+    status: {
+      not: "CANCELLED",
+    },
+  };
+
+  const where: Prisma.SaleWhereInput = searchTerm
+    ? {
+        ...baseWhere,
+        OR: [
+          { saleNumber: { contains: searchTerm, mode: "insensitive" } },
+          {
+            client: {
+              companyName: { contains: searchTerm, mode: "insensitive" },
+            },
+          },
+          {
+            client: {
+              contactPerson: { contains: searchTerm, mode: "insensitive" },
+            },
+          },
+          {
+            client: { email: { contains: searchTerm, mode: "insensitive" } },
+          },
+          {
+            items: {
+              some: {
+                product: {
+                  name: { contains: searchTerm, mode: "insensitive" },
+                },
+              },
+            },
+          },
+          {
+            items: {
+              some: {
+                product: {
+                  sku: { contains: searchTerm, mode: "insensitive" },
+                },
+              },
+            },
+          },
+        ],
+      }
+    : baseWhere;
+
+  const total = await prisma.sale.count({ where });
+
   const sales = await prisma.sale.findMany({
     select: {
       id: true,
@@ -256,6 +350,7 @@ export async function findAll(
     },
     skip,
     take: limit,
+    where,
   });
 
   const totalPages = Math.ceil(total / limit);

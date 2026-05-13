@@ -12,6 +12,12 @@ router.get("/categories/:id", expenseController.getCategoryById);
 // ==================== Expenses ====================
 // All authenticated users can view expenses
 router.get("/", expenseController.getAll);
+router.get("/summary/me", expenseController.getMyUnpaidSummary);
+router.get(
+  "/summary",
+  authorize("DIRECTOR"),
+  expenseController.getUnpaidSummary
+);
 
 // Get expense by expense number (before /:id route to avoid conflicts)
 router.get(
