@@ -70,17 +70,21 @@ export type PaginatedResult<T> = {
 };
 
 export type UnpaidSalesTotals = {
-  /** Sales with remaining balance (not cancelled, still owe money) */
+  /** Non-cancelled sales that still have an unpaid balance */
   saleCount: number;
-  /** Sum of paidAmount on those sales (partial payments to date) */
+  /**
+   * Sum of paidAmount on those open-balance sales, plus all paidAmount on
+   * cancelled sales (money kept; remaining balance on cancelled sales excluded).
+   */
   totalPaid: string;
-  /** Sum of (totalAmount minus paidAmount) across those sales */
+  /** Remaining balance on non-cancelled sales only */
   totalOutstanding: string;
 };
 
 /**
- * Aggregate unpaid balance: non-cancelled sales where paidAmount is below totalAmount.
- * totalPaid is the sum of amounts already collected on those same sales.
+ * Outstanding: non-cancelled sales where paidAmount is below totalAmount.
+ * Collected: paidAmount on those sales plus every paidAmount on cancelled sales
+ * (cancelled balances are not owed).
  */
 export async function getUnpaidSalesTotals(): Promise<UnpaidSalesTotals> {
   const rows = await prisma.$queryRaw<
@@ -93,12 +97,32 @@ export async function getUnpaidSalesTotals(): Promise<UnpaidSalesTotals> {
     ]
   >(Prisma.sql`
     SELECT
-      COUNT(*)::bigint AS sale_count,
-      COALESCE(SUM("paidAmount"), 0) AS total_paid,
-      COALESCE(SUM("totalAmount" - "paidAmount"), 0) AS total_outstanding
+      COUNT(*) FILTER (
+        WHERE "status" <> 'CANCELLED'::"SaleStatus"
+          AND "totalAmount" > "paidAmount"
+      )::bigint AS sale_count,
+      COALESCE(
+        SUM(
+          CASE
+            WHEN "status" = 'CANCELLED'::"SaleStatus" THEN "paidAmount"
+            WHEN "status" <> 'CANCELLED'::"SaleStatus"
+              AND "totalAmount" > "paidAmount" THEN "paidAmount"
+            ELSE 0
+          END
+        ),
+        0
+      ) AS total_paid,
+      COALESCE(
+        SUM(
+          CASE
+            WHEN "status" <> 'CANCELLED'::"SaleStatus"
+              AND "totalAmount" > "paidAmount" THEN "totalAmount" - "paidAmount"
+            ELSE 0
+          END
+        ),
+        0
+      ) AS total_outstanding
     FROM "sales"
-    WHERE "status" <> 'CANCELLED'::"SaleStatus"
-      AND "totalAmount" > "paidAmount"
   `);
 
   const row = rows[0];
@@ -226,6 +250,13 @@ function calculateTotalAmount(
   return new Prisma.Decimal(total);
 }
 
+/** Block mutations on cancelled sales (they remain visible for history). */
+function assertSaleNotCancelled(status: string, verb: string): void {
+  if (status === "CANCELLED") {
+    throw new Error(`Cannot ${verb} a cancelled sale`);
+  }
+}
+
 export async function findAll(
   options: PaginationOptions = {}
 ): Promise<PaginatedResult<SaleWithRelations>> {
@@ -236,15 +267,8 @@ export async function findAll(
   const searchRaw = options.search?.trim();
   const searchTerm = searchRaw && searchRaw.length > 0 ? searchRaw : undefined;
 
-  const baseWhere: Prisma.SaleWhereInput = {
-    status: {
-      not: "CANCELLED",
-    },
-  };
-
   const where: Prisma.SaleWhereInput = searchTerm
     ? {
-        ...baseWhere,
         OR: [
           { saleNumber: { contains: searchTerm, mode: "insensitive" } },
           {
@@ -280,7 +304,7 @@ export async function findAll(
           },
         ],
       }
-    : baseWhere;
+    : {};
 
   const total = await prisma.sale.count({ where });
 
@@ -662,6 +686,8 @@ export async function update(
     throw new Error("Sale not found");
   }
 
+  assertSaleNotCancelled(existingSale.status, "edit");
+
   // Build update data
   const saleUpdateData: Prisma.SaleUpdateInput = { ...updateData };
 
@@ -761,6 +787,10 @@ export async function remove(id: string, performedBy?: string): Promise<void> {
     throw new Error("Sale not found");
   }
 
+  if (existingSale.status === "CANCELLED") {
+    throw new Error("Sale is already cancelled");
+  }
+
   // Soft delete: set status to CANCELLED
   await prisma.sale.update({
     where: { id },
@@ -807,6 +837,8 @@ export async function createItem(
   if (!sale) {
     throw new Error("Sale not found");
   }
+
+  assertSaleNotCancelled(sale.status, "add items to");
 
   const itemTotalPrice = new Prisma.Decimal(
     data.quantity * Number(data.unitPrice)
@@ -888,6 +920,15 @@ export async function updateItem(
     throw new Error("Sale item not found");
   }
 
+  const parentSale = await prisma.sale.findUnique({
+    where: { id: existingItem.saleId },
+    select: { status: true },
+  });
+  if (!parentSale) {
+    throw new Error("Sale not found");
+  }
+  assertSaleNotCancelled(parentSale.status, "edit items on");
+
   // Recalculate totalPrice if quantity or unitPrice changed
   const quantity = data.quantity ?? existingItem.quantity;
   const unitPriceValue = data.unitPrice
@@ -951,6 +992,15 @@ export async function deleteItem(
   if (!existingItem) {
     throw new Error("Sale item not found");
   }
+
+  const parentSale = await prisma.sale.findUnique({
+    where: { id: existingItem.saleId },
+    select: { status: true },
+  });
+  if (!parentSale) {
+    throw new Error("Sale not found");
+  }
+  assertSaleNotCancelled(parentSale.status, "remove items from");
 
   const saleId = existingItem.saleId;
 
@@ -1041,6 +1091,7 @@ export async function createInstallment(
 ): Promise<SaleInstallmentRow> {
   const sale = await prisma.sale.findUnique({ where: { id: saleId } });
   if (!sale) throw new Error("Sale not found");
+  assertSaleNotCancelled(sale.status, "record payments on");
 
   const amount = new Prisma.Decimal(data.amount);
   const paidAt = data.paidAt ? new Date(data.paidAt) : new Date();
@@ -1142,6 +1193,13 @@ export async function updateInstallment(
   const existing = await prisma.saleInstallment.findUnique({ where: { id } });
   if (!existing) throw new Error("Installment not found");
 
+  const parentSale = await prisma.sale.findUnique({
+    where: { id: existing.saleId },
+    select: { status: true },
+  });
+  if (!parentSale) throw new Error("Sale not found");
+  assertSaleNotCancelled(parentSale.status, "edit payments on");
+
   const updateData: Prisma.SaleInstallmentUpdateInput = {};
   if (data.amount != null) updateData.amount = new Prisma.Decimal(data.amount);
   if (data.dueDate !== undefined) updateData.dueDate = data.dueDate ? new Date(data.dueDate) : null;
@@ -1176,6 +1234,13 @@ export async function deleteInstallment(
   const existing = await prisma.saleInstallment.findUnique({ where: { id } });
   if (!existing) throw new Error("Installment not found");
   const saleId = existing.saleId;
+
+  const parentSale = await prisma.sale.findUnique({
+    where: { id: saleId },
+    select: { status: true },
+  });
+  if (!parentSale) throw new Error("Sale not found");
+  assertSaleNotCancelled(parentSale.status, "delete payments on");
 
   await prisma.saleInstallment.delete({ where: { id } });
   await recalcSalePaymentStatus(saleId);
