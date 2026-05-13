@@ -89,6 +89,8 @@ model Client {
   backendBaseUrl  String?
   apiUserName     String?
   apiPassword     String?
+  /// When false, scheduled payment / extension reminder SMS are not sent (promotional SMS can use a separate flag later).
+  reminderSms     Boolean       @default(true) @map("reminder_sms")
   status          ClientStatus  @default(active)
   notes           String?       // Additional notes about the client
   broughtInById   String?       // Employee who brought in the client

@@ -53,6 +53,7 @@ type ClientWithRelations = {
   backendBaseUrl: string | null;
   apiUserName: string | null;
   apiPassword: string | null;
+  reminderSms: boolean;
   status: string;
   notes: string | null;
   broughtInById: string | null;
@@ -113,6 +114,7 @@ export async function findAll(
       backendBaseUrl: true,
       apiUserName: true,
       apiPassword: true,
+      reminderSms: true,
       status: true,
       notes: true,
       broughtInById: true,

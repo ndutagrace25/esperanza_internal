@@ -79,6 +79,8 @@ export type UnpaidSalesTotals = {
   totalPaid: string;
   /** Remaining balance on non-cancelled sales only */
   totalOutstanding: string;
+  /** Same as totalPaid + totalOutstanding (value on open-balance sales plus payments on cancelled sales) */
+  totalSalesAmount: string;
 };
 
 /**
@@ -127,7 +129,12 @@ export async function getUnpaidSalesTotals(): Promise<UnpaidSalesTotals> {
 
   const row = rows[0];
   if (!row) {
-    return { saleCount: 0, totalPaid: "0", totalOutstanding: "0" };
+    return {
+      saleCount: 0,
+      totalPaid: "0",
+      totalOutstanding: "0",
+      totalSalesAmount: "0",
+    };
   }
 
   const toStr = (raw: unknown) =>
@@ -137,10 +144,16 @@ export async function getUnpaidSalesTotals(): Promise<UnpaidSalesTotals> {
         ? raw.toString()
         : String(raw);
 
+  const totalPaidStr = toStr(row.total_paid);
+  const totalOutstandingStr = toStr(row.total_outstanding);
+  const paidDec = new Prisma.Decimal(totalPaidStr);
+  const outstandingDec = new Prisma.Decimal(totalOutstandingStr);
+
   return {
     saleCount: Number(row.sale_count),
-    totalPaid: toStr(row.total_paid),
-    totalOutstanding: toStr(row.total_outstanding),
+    totalPaid: totalPaidStr,
+    totalOutstanding: totalOutstandingStr,
+    totalSalesAmount: paidDec.add(outstandingDec).toString(),
   };
 }
 

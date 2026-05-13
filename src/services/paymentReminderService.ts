@@ -41,6 +41,7 @@ export async function getSalesDueForReminder(now: Date = new Date()) {
       totalAmount: { gt: 0 },
       // Exclude sales that have requested a payment date extension (they get a separate reminder)
       requestedPaymentDateExtension: { not: true },
+      client: { reminderSms: true },
     },
     select: {
       id: true,
@@ -225,6 +226,7 @@ export async function getSalesDueForExtensionReminder(
       requestedPaymentDateExtension: true,
       paymentExtensionDueDate: { not: null, gte: start, lte: end },
       totalAmount: { gt: 0 },
+      client: { reminderSms: true },
     },
     select: {
       id: true,
