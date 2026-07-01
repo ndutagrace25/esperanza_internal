@@ -102,6 +102,7 @@ model Client {
   jobCards        JobCard[]
   sales           Sale[]
   integrations    ClientIntegration[]
+  subscriptions   ClientSubscription[]
 
   @@map("clients")
   @@index([status])
@@ -124,6 +125,33 @@ model ClientIntegration {
   @@unique([clientId, label]) // one value per label per client
   @@map("client_integrations")
   @@index([clientId])
+}
+
+enum ClientSubscriptionStatus {
+  active
+  expired
+  suspended
+  cancelled
+}
+
+/// ERP / system license subscription per client (renewed via client's external API).
+model ClientSubscription {
+  id          String                   @id @default(cuid())
+  clientId    String
+  client      Client                   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  /// Company code in the client's system (used in /company/update/:code).
+  code        String
+  /// Base API URL, e.g. https://backend.example.co.ke/api
+  apiBaseUrl  String                   @map("api_base_url")
+  expiryDate  DateTime                 @map("expiry_date")
+  status      ClientSubscriptionStatus @default(active)
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+
+  @@map("client_subscriptions")
+  @@index([clientId])
+  @@index([status])
+  @@index([expiryDate])
 }
 
 enum ClientStatus {
