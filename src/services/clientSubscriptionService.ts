@@ -45,6 +45,21 @@ function normalizeSubscriptionCode(code: string): string {
   return code.trim().replace(/^\/?company\/update\/?/i, "");
 }
 
+function buildCompanyUpdateUrl(apiBaseUrl: string, code: string): string {
+  const base = normalizeApiBaseUrl(apiBaseUrl);
+  const companyCode = normalizeSubscriptionCode(code);
+  if (!companyCode) {
+    throw new Error("Subscription company code is required");
+  }
+
+  const updateSuffix = "/company/update";
+  if (base.toLowerCase().endsWith(updateSuffix)) {
+    return `${base}/${encodeURIComponent(companyCode)}`;
+  }
+
+  return `${base}${updateSuffix}/${encodeURIComponent(companyCode)}`;
+}
+
 function parseExpiryDate(value: string | Date): Date {
   if (value instanceof Date) {
     if (Number.isNaN(value.getTime())) {
@@ -71,6 +86,13 @@ function parseExpiryDate(value: string | Date): Date {
 
 /** YYYY-MM-DD for external license API */
 function toLicenseExpiryDateString(value: string | Date): string {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return trimmed;
+    }
+  }
+
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) {
     throw new Error("Invalid license expiry date");
@@ -98,6 +120,39 @@ function parseFilterDateEnd(dateStr: string): Date {
     throw new Error("Invalid expiryTo date");
   }
   return new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999));
+}
+
+type SubscriptionForRenew = {
+  apiBaseUrl: string;
+  code: string;
+};
+
+/**
+ * PATCH {apiBaseUrl}/company/update/:code with { licenseExpiryDate }.
+ * Open endpoint — no login required.
+ */
+async function pushLicenseExpiryToClientSystem(
+  subscription: SubscriptionForRenew,
+  licenseExpiryDate: string
+): Promise<void> {
+  const updateUrl = buildCompanyUpdateUrl(
+    subscription.apiBaseUrl,
+    subscription.code
+  );
+  const licenseDate = toLicenseExpiryDateString(licenseExpiryDate);
+
+  const updateResponse = await fetch(updateUrl, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ licenseExpiryDate: licenseDate }),
+  });
+
+  if (!updateResponse.ok) {
+    const text = await updateResponse.text();
+    throw new Error(
+      `Failed to update client system (${updateResponse.status}): ${text || updateResponse.statusText}`
+    );
+  }
 }
 
 export async function findAll(options: ListClientSubscriptionsOptions = {}) {
@@ -234,7 +289,7 @@ export async function update(
 }
 
 /**
- * Update local expiry date (and set status to active).
+ * Push license expiry to the client's API, then update local expiryDate.
  */
 export async function renew(
   id: string,
@@ -250,6 +305,8 @@ export async function renew(
   if (!subscription) {
     throw new Error("Client subscription not found");
   }
+
+  await pushLicenseExpiryToClientSystem(subscription, data.licenseExpiryDate);
 
   const newExpiry = parseExpiryDate(data.licenseExpiryDate);
 
