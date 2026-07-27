@@ -44,6 +44,10 @@ model Employee {
   jobCards JobCard[] @relation("JobCardsCreated")
   expensesSubmitted Expense[] @relation("ExpensesSubmitted")
   expensesApproved  Expense[] @relation("ExpensesApproved")
+  expensePaymentsRecorded ExpensePayment[] @relation("ExpensePaymentsRecorded")
+  salesCommissionPaymentsRecorded SaleCommissionPayment[] @relation("SaleCommissionPaymentsRecorded")
+  saleAmountHistoryChanges SaleAmountHistory[] @relation("SaleAmountHistoryChanges")
+  salesPersonProfiles SalesPerson[]
 
   @@map("employees")
 }
@@ -327,6 +331,7 @@ enum JobCardStatus {
   DRAFT
   PENDING_CLIENT_CONFIRMATION
   IN_PROGRESS
+  APPROVED    // Auto-set once any linked expense is approved
   COMPLETED
   CANCELLED
 }
@@ -341,6 +346,11 @@ enum ApprovalRole {
 enum SignatureType {
   ON_PAPER
   DIGITAL
+}
+
+enum CommissionType {
+  FIXED       // A flat KES amount
+  PERCENTAGE  // A percentage of the sale's totalAmount
 }
 
 /// Sales model - represents a sale transaction to a client
@@ -359,16 +369,88 @@ model Sale {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   requestedPaymentDateExtension Boolean  @default(false)
-  paymentExtensionDueDate DateTime? 
+  paymentExtensionDueDate DateTime?
+
+  // Commission: snapshotted from the client's commission config + salesPerson at
+  // creation time, so later changes to the client don't retroactively rewrite
+  // historical sales. commissionAmount is recalculated whenever totalAmount changes.
+  commissionSalesPersonId String?
+  commissionSalesPerson   SalesPerson?    @relation("SaleCommissionSalesPerson", fields: [commissionSalesPersonId], references: [id])
+  commissionType       CommissionType?
+  commissionRate       Decimal?        @db.Decimal(10, 2) // Fixed amount or percentage, snapshotted from the client
+  commissionAmount     Decimal         @default(0) @db.Decimal(10, 2) // Derived: fixed rate, or rate% of totalAmount
+  commissionPaidAmount Decimal         @default(0) @db.Decimal(10, 2) // Sum of recorded commission payouts
 
   // Relations
   items           SaleItem[]
   installments    SaleInstallment[]
+  commissionPayments SaleCommissionPayment[]
+  amountHistory   SaleAmountHistory[]
 
   @@index([clientId])
   @@index([saleDate])
   @@index([status])
+  @@index([commissionSalesPersonId])
   @@map("sales")
+}
+
+enum SalesPersonStatus {
+  active
+  inactive
+}
+
+/// A person credited with sales commission — may be a staff member (linked via employeeId)
+/// or an external salesperson with no login/Employee record.
+model SalesPerson {
+  id          String            @id @default(cuid())
+  name        String
+  phone       String?
+  email       String?
+  notes       String?
+  employeeId  String?           // Optional link if this person is also a staff member
+  employee    Employee?         @relation(fields: [employeeId], references: [id])
+  status      SalesPersonStatus @default(active)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  sales       Sale[]            @relation("SaleCommissionSalesPerson")
+
+  @@map("sales_people")
+  @@index([employeeId])
+  @@index([status])
+}
+
+/// Payouts of a sale's commission to the credited employee (supports partial payouts).
+model SaleCommissionPayment {
+  id              String         @id @default(cuid())
+  saleId          String
+  sale            Sale           @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  amount          Decimal        @db.Decimal(10, 2)
+  paymentDate     DateTime       @default(now())
+  paymentMethod   PaymentMethod?
+  referenceNumber String?
+  notes           String?
+  recordedById    String?
+  recordedBy      Employee?      @relation("SaleCommissionPaymentsRecorded", fields: [recordedById], references: [id])
+  createdAt       DateTime       @default(now())
+
+  @@index([saleId])
+  @@map("sale_commission_payments")
+}
+
+/// Audit trail of a sale's totalAmount changing (e.g. after correcting a sale item).
+model SaleAmountHistory {
+  id            String    @id @default(cuid())
+  saleId        String
+  sale          Sale      @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  oldAmount     Decimal   @db.Decimal(10, 2)
+  newAmount     Decimal   @db.Decimal(10, 2)
+  changedById   String?
+  changedBy     Employee? @relation("SaleAmountHistoryChanges", fields: [changedById], references: [id])
+  createdAt     DateTime  @default(now())
+
+  @@index([saleId])
+  @@map("sale_amount_history")
 }
 
 /// Monthly (or any) payment installments toward a sale. When sum(installments.amount) >= sale.totalAmount, the sale is considered fully paid/completed.
@@ -448,21 +530,22 @@ model Expense {
   category        ExpenseCategory @relation(fields: [categoryId], references: [id])
   description     String          // What the expense was for
   amount          Decimal         @db.Decimal(10, 2)
+  amountPaid      Decimal         @default(0) @db.Decimal(10, 2) // Sum of recorded payments
   expenseDate     DateTime        // When the expense occurred
   vendor          String?         // Who was paid (supplier, vendor name)
   referenceNumber String?         // Invoice/receipt number
-  paymentMethod   PaymentMethod?  // How it was paid
+  paymentMethod   PaymentMethod?  // How it was paid (most recent payment)
   status          ExpenseStatus   @default(PENDING)
   hasReceipt      Boolean         @default(false)
   receiptUrl      String?         // Receipt image URL
   notes           String?         // Additional notes
-  
+
   // Job Card linkage (for field expenses)
   jobCardId       String?         // Optional link to job card
   jobCard         JobCard?        @relation(fields: [jobCardId], references: [id])
   jobExpenseId    String?         @unique // Optional link to specific JobExpense record
   jobExpense      JobExpense?     @relation(fields: [jobExpenseId], references: [id])
-  
+
   // Workflow tracking
   submittedById   String?         // Employee who submitted the expense
   submittedBy     Employee?       @relation("ExpensesSubmitted", fields: [submittedById], references: [id])
@@ -471,7 +554,8 @@ model Expense {
   approvedAt      DateTime?       // When it was approved
   rejectedAt      DateTime?       // When it was rejected
   rejectionReason String?         // Why it was rejected
-  
+  payments        ExpensePayment[]
+
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
@@ -483,13 +567,31 @@ model Expense {
   @@index([jobCardId])
 }
 
+model ExpensePayment {
+  id              String         @id @default(cuid())
+  expenseId       String
+  expense         Expense        @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  amount          Decimal        @db.Decimal(10, 2)
+  paymentDate     DateTime       @default(now())
+  paymentMethod   PaymentMethod?
+  referenceNumber String?
+  notes           String?
+  recordedById    String?
+  recordedBy      Employee?      @relation("ExpensePaymentsRecorded", fields: [recordedById], references: [id])
+  createdAt       DateTime       @default(now())
+
+  @@map("expense_payments")
+  @@index([expenseId])
+}
+
 enum ExpenseStatus {
   DRAFT
-  PENDING      // Awaiting approval
-  APPROVED     // Approved but not yet paid
-  PAID         // Paid/Reimbursed
-  REJECTED     // Rejected
-  CANCELLED    // Cancelled
+  PENDING         // Awaiting approval
+  APPROVED        // Approved but not yet paid
+  PARTIALLY_PAID  // Approved, some payment recorded, balance remaining
+  PAID            // Fully paid/reimbursed
+  REJECTED        // Rejected
+  CANCELLED       // Cancelled
 }
 
 enum PaymentMethod {

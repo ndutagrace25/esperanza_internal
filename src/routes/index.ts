@@ -7,6 +7,7 @@ import productCategoryRoutes from "./productCategoryRoutes.js";
 import productRoutes from "./productRoutes.js";
 import jobCardRoutes from "./jobCardRoutes.js";
 import saleRoutes from "./saleRoutes.js";
+import salesPersonRoutes from "./salesPersonRoutes.js";
 import expenseRoutes from "./expenseRoutes.js";
 import clientIntegrationRoutes from "./clientIntegrationRoutes.js";
 import clientSubscriptionRoutes from "./clientSubscriptionRoutes.js";
@@ -29,6 +30,7 @@ router.use("/product-categories", authenticate, productCategoryRoutes);
 router.use("/products", authenticate, productRoutes);
 router.use("/job-cards", authenticate, jobCardRoutes);
 router.use("/sales", authenticate, saleRoutes);
+router.use("/sales-people", authenticate, salesPersonRoutes);
 router.use("/expenses", authenticate, expenseRoutes);
 
 export default router;

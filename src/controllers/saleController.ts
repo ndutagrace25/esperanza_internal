@@ -330,3 +330,143 @@ export async function deleteInstallment(
   }
 }
 
+// Sale commission payments
+export async function getCommissionPayments(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const saleId = getParam(req.params["saleId"]);
+    if (!saleId) {
+      res.status(400).json({ error: "Sale ID is required" });
+      return;
+    }
+
+    const payments = await saleService.getCommissionPayments(saleId);
+    res.json(payments);
+  } catch (error) {
+    console.error("Error fetching commission payments:", error);
+    res.status(500).json({ error: "Failed to fetch commission payments" });
+  }
+}
+
+export async function recordCommissionPayment(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const saleId = getParam(req.params["saleId"]);
+    if (!saleId) {
+      res.status(400).json({ error: "Sale ID is required" });
+      return;
+    }
+
+    const { amount, paymentMethod, referenceNumber, paymentDate, notes } =
+      req.body;
+
+    if (!amount) {
+      res.status(400).json({ error: "Payment amount is required" });
+      return;
+    }
+
+    const sale = await saleService.recordCommissionPayment(
+      saleId,
+      {
+        amount,
+        paymentMethod: paymentMethod || null,
+        referenceNumber: referenceNumber || null,
+        notes: notes || null,
+        ...(paymentDate && { paymentDate: new Date(paymentDate) }),
+      },
+      req.employee?.id
+    );
+    res.status(201).json(sale);
+  } catch (error) {
+    console.error("Error recording commission payment:", error);
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : "Failed to record commission payment";
+    res.status(400).json({ error: errorMessage });
+  }
+}
+
+export async function deleteCommissionPayment(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const paymentId = getParam(req.params["paymentId"]);
+    if (!paymentId) {
+      res.status(400).json({ error: "Payment ID is required" });
+      return;
+    }
+
+    const sale = await saleService.deleteCommissionPayment(
+      paymentId,
+      req.employee?.id
+    );
+    res.json(sale);
+  } catch (error) {
+    console.error("Error deleting commission payment:", error);
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : "Failed to delete commission payment";
+    res.status(400).json({ error: errorMessage });
+  }
+}
+
+// Sale amount history
+export async function getAmountHistory(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const saleId = getParam(req.params["saleId"]);
+    if (!saleId) {
+      res.status(400).json({ error: "Sale ID is required" });
+      return;
+    }
+
+    const history = await saleService.getSaleAmountHistory(saleId);
+    res.json(history);
+  } catch (error) {
+    console.error("Error fetching sale amount history:", error);
+    res.status(500).json({ error: "Failed to fetch sale amount history" });
+  }
+}
+
+// Commission summary + per-salesperson drill-down
+export async function getCommissionSummary(
+  _req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const summary = await saleService.getCommissionSummary();
+    res.json(summary);
+  } catch (error) {
+    console.error("Error fetching commission summary:", error);
+    res.status(500).json({ error: "Failed to fetch commission summary" });
+  }
+}
+
+export async function getSalesForSalesPerson(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const salesPersonId = getParam(req.params["salesPersonId"]);
+    if (!salesPersonId) {
+      res.status(400).json({ error: "Sales person ID is required" });
+      return;
+    }
+
+    const sales = await saleService.getSalesForSalesPerson(salesPersonId);
+    res.json(sales);
+  } catch (error) {
+    console.error("Error fetching sales for sales person:", error);
+    res.status(500).json({ error: "Failed to fetch sales for sales person" });
+  }
+}
+

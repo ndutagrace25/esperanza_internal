@@ -1,8 +1,124 @@
 import { prisma } from "../lib/prisma.js";
-import type { JobCard, Prisma, JobCardStatus } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import type { JobCard, JobCardStatus, ExpenseStatus } from "@prisma/client";
 import { createLog } from "./systemLogService.js";
 import { sendJobCardNotificationEmail } from "../utils/email.js";
 import * as expenseService from "./expenseService.js";
+
+/**
+ * Aggregate payment status across a job card's formal (linked) expenses.
+ * Distinct from JobCardStatus, which tracks job progress rather than payment.
+ */
+export type ExpensePaymentStatus =
+  | "NONE"
+  | "UNPAID"
+  | "PARTIALLY_PAID"
+  | "PAID";
+
+type FormalExpenseForPaymentStatus = {
+  amount: Prisma.Decimal;
+  amountPaid: Prisma.Decimal;
+  status: ExpenseStatus;
+};
+
+function computeExpensePaymentStatus(
+  formalExpenses: FormalExpenseForPaymentStatus[]
+): ExpensePaymentStatus {
+  const billable = formalExpenses.filter(
+    (e) => e.status !== "REJECTED" && e.status !== "CANCELLED"
+  );
+  if (billable.length === 0) {
+    return "NONE";
+  }
+
+  const totalAmount = billable.reduce(
+    (sum, e) => sum.add(e.amount),
+    new Prisma.Decimal(0)
+  );
+  const totalPaid = billable.reduce(
+    (sum, e) => sum.add(e.amountPaid),
+    new Prisma.Decimal(0)
+  );
+
+  if (totalPaid.lessThanOrEqualTo(0)) {
+    return "UNPAID";
+  }
+  if (totalPaid.greaterThanOrEqualTo(totalAmount)) {
+    return "PAID";
+  }
+  return "PARTIALLY_PAID";
+}
+
+/**
+ * Aggregate approval status across a job card's formal (linked) expenses.
+ * APPROVED once every billable expense has passed approval (APPROVED,
+ * PARTIALLY_PAID, or PAID); PENDING while any is still DRAFT/PENDING.
+ */
+export type ExpenseApprovalStatus = "NONE" | "PENDING" | "APPROVED";
+
+const APPROVED_OR_BEYOND: ExpenseStatus[] = [
+  "APPROVED",
+  "PARTIALLY_PAID",
+  "PAID",
+];
+
+function computeExpenseApprovalStatus(
+  formalExpenses: FormalExpenseForPaymentStatus[]
+): ExpenseApprovalStatus {
+  const billable = formalExpenses.filter(
+    (e) => e.status !== "REJECTED" && e.status !== "CANCELLED"
+  );
+  if (billable.length === 0) {
+    return "NONE";
+  }
+
+  const allApproved = billable.every((e) =>
+    APPROVED_OR_BEYOND.includes(e.status)
+  );
+  return allApproved ? "APPROVED" : "PENDING";
+}
+
+/**
+ * Once any linked expense has passed approval, staff can no longer edit the
+ * job card or its tasks/quick expenses (directors are unaffected).
+ */
+function computeStaffEditLocked(
+  formalExpenses: FormalExpenseForPaymentStatus[]
+): boolean {
+  return formalExpenses.some((e) => APPROVED_OR_BEYOND.includes(e.status));
+}
+
+export async function isJobCardLockedForStaff(
+  jobCardId: string
+): Promise<boolean> {
+  const count = await prisma.expense.count({
+    where: {
+      jobCardId,
+      status: { in: APPROVED_OR_BEYOND },
+    },
+  });
+  return count > 0;
+}
+
+export async function getTaskJobCardId(
+  taskId: string
+): Promise<string | null> {
+  const task = await prisma.jobTask.findUnique({
+    where: { id: taskId },
+    select: { jobCardId: true },
+  });
+  return task?.jobCardId ?? null;
+}
+
+export async function getJobExpenseJobCardId(
+  jobExpenseId: string
+): Promise<string | null> {
+  const expense = await prisma.jobExpense.findUnique({
+    where: { id: jobExpenseId },
+    select: { jobCardId: true },
+  });
+  return expense?.jobCardId ?? null;
+}
 
 export type CreateJobCardData = Omit<
   Prisma.JobCardCreateInput,
@@ -143,6 +259,9 @@ type JobCardWithRelations = {
     signedAt: Date | null;
     signatureType: string | null;
   }>;
+  expensePaymentStatus: ExpensePaymentStatus;
+  expenseApprovalStatus: ExpenseApprovalStatus;
+  staffEditLocked: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -271,6 +390,13 @@ export async function findAll(
           createdAt: "asc",
         },
       },
+      formalExpenses: {
+        select: {
+          amount: true,
+          amountPaid: true,
+          status: true,
+        },
+      },
       createdAt: true,
       updatedAt: true,
     },
@@ -284,7 +410,12 @@ export async function findAll(
   const totalPages = Math.ceil(total / limit);
 
   return {
-    data: jobCards,
+    data: jobCards.map(({ formalExpenses, ...jobCard }) => ({
+      ...jobCard,
+      expensePaymentStatus: computeExpensePaymentStatus(formalExpenses),
+      expenseApprovalStatus: computeExpenseApprovalStatus(formalExpenses),
+      staffEditLocked: computeStaffEditLocked(formalExpenses),
+    })),
     pagination: {
       page,
       limit,
@@ -295,7 +426,7 @@ export async function findAll(
 }
 
 export async function findById(id: string) {
-  return prisma.jobCard.findUnique({
+  const jobCard = await prisma.jobCard.findUnique({
     where: { id },
     include: {
       client: {
@@ -330,12 +461,29 @@ export async function findById(id: string) {
           createdAt: "asc",
         },
       },
+      formalExpenses: {
+        select: {
+          amount: true,
+          amountPaid: true,
+          status: true,
+        },
+      },
     },
   });
+
+  if (!jobCard) return jobCard;
+
+  const { formalExpenses, ...rest } = jobCard;
+  return {
+    ...rest,
+    expensePaymentStatus: computeExpensePaymentStatus(formalExpenses),
+    expenseApprovalStatus: computeExpenseApprovalStatus(formalExpenses),
+    staffEditLocked: computeStaffEditLocked(formalExpenses),
+  };
 }
 
 export async function findByJobNumber(jobNumber: string) {
-  return prisma.jobCard.findUnique({
+  const jobCard = await prisma.jobCard.findUnique({
     where: { jobNumber },
     include: {
       client: {
@@ -370,8 +518,25 @@ export async function findByJobNumber(jobNumber: string) {
           createdAt: "asc",
         },
       },
+      formalExpenses: {
+        select: {
+          amount: true,
+          amountPaid: true,
+          status: true,
+        },
+      },
     },
   });
+
+  if (!jobCard) return jobCard;
+
+  const { formalExpenses, ...rest } = jobCard;
+  return {
+    ...rest,
+    expensePaymentStatus: computeExpensePaymentStatus(formalExpenses),
+    expenseApprovalStatus: computeExpenseApprovalStatus(formalExpenses),
+    staffEditLocked: computeStaffEditLocked(formalExpenses),
+  };
 }
 
 export async function create(

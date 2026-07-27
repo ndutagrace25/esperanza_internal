@@ -21,8 +21,13 @@ router.get("/:id", jobCardController.getById);
 // all role can create job cards
 router.post("/", jobCardController.create);
 
-// Only DIRECTOR role can update job cards
-router.patch("/:id", authorize("DIRECTOR"), jobCardController.update);
+// STAFF and DIRECTOR can update job card details; only DIRECTOR can change status
+// (enforced in the controller, which strips `status` from STAFF requests)
+router.patch(
+  "/:id",
+  authorize(["DIRECTOR", "STAFF"]),
+  jobCardController.update
+);
 
 // Only DIRECTOR role can delete job cards
 router.delete("/:id", authorize("DIRECTOR"), jobCardController.deleteJobCard);

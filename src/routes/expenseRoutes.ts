@@ -40,6 +40,21 @@ router.post("/:id/approve", authorize("DIRECTOR"), expenseController.approve);
 // Only DIRECTOR role can mark expenses as paid
 router.post("/:id/pay", authorize("DIRECTOR"), expenseController.markAsPaid);
 
+// All authenticated users can view an expense's payment history
+router.get("/:id/payments", expenseController.getPayments);
+
+// Only DIRECTOR role can record or delete payments
+router.post(
+  "/:id/payments",
+  authorize("DIRECTOR"),
+  expenseController.recordPayment
+);
+router.delete(
+  "/:id/payments/:paymentId",
+  authorize("DIRECTOR"),
+  expenseController.deletePayment
+);
+
 // Only DIRECTOR role can reject expenses
 router.post("/:id/reject", authorize("DIRECTOR"), expenseController.reject);
 

@@ -1,6 +1,12 @@
 import { prisma } from "../lib/prisma.js";
 import { Prisma } from "@prisma/client";
-import type { Expense, ExpenseStatus, JobCardStatus } from "@prisma/client";
+import type {
+  Expense,
+  ExpensePayment,
+  ExpenseStatus,
+  JobCardStatus,
+  PaymentMethod,
+} from "@prisma/client";
 import { createLog } from "./systemLogService.js";
 import { findMatchingCategory } from "./expenseCategoryService.js";
 import { sendExpenseNotificationEmail } from "../utils/email.js";
@@ -79,12 +85,33 @@ export type PaginatedResult<T> = {
   };
 };
 
-/** Pending / approved-but-not-paid — excludes PAID, REJECTED, CANCELLED */
+/** Pending / approved-but-not-fully-paid — excludes PAID, REJECTED, CANCELLED */
 const UNPAID_EXPENSE_STATUSES: ExpenseStatus[] = [
   "DRAFT",
   "PENDING",
   "APPROVED",
+  "PARTIALLY_PAID",
 ];
+
+/** Statuses from which a payment can be recorded against an expense */
+const PAYABLE_EXPENSE_STATUSES: ExpenseStatus[] = ["APPROVED", "PARTIALLY_PAID"];
+
+export type RecordPaymentData = {
+  amount: Prisma.Decimal | number | string;
+  paymentMethod?: PaymentMethod | null;
+  referenceNumber?: string | null;
+  paymentDate?: Date;
+  notes?: string | null;
+};
+
+export type ExpensePaymentWithRecordedBy = ExpensePayment & {
+  recordedBy: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+  } | null;
+};
 
 export type UnpaidExpenseSummaryOptions = {
   startDate?: Date;
@@ -139,6 +166,7 @@ type ExpenseWithRelations = {
   };
   description: string;
   amount: Prisma.Decimal;
+  amountPaid: Prisma.Decimal;
   expenseDate: Date;
   vendor: string | null;
   referenceNumber: string | null;
@@ -268,6 +296,7 @@ async function notifyDirectorsAboutExpense(
         expenseNumber: true,
         description: true,
         amount: true,
+        amountPaid: true,
         expenseDate: true,
         vendor: true,
         status: true,
@@ -405,6 +434,7 @@ export async function findAll(
       },
       description: true,
       amount: true,
+      amountPaid: true,
       expenseDate: true,
       vendor: true,
       referenceNumber: true,
@@ -500,7 +530,7 @@ export async function getUnpaidSummaryByEmployee(
   const groups = await prisma.expense.groupBy({
     by: ["submittedById", "status"],
     where,
-    _sum: { amount: true },
+    _sum: { amount: true, amountPaid: true },
     _count: { _all: true },
   });
 
@@ -536,7 +566,11 @@ export async function getUnpaidSummaryByEmployee(
   let totalsAmount = new Prisma.Decimal(0);
 
   for (const g of groups) {
-    const rowAmount = g._sum.amount ?? new Prisma.Decimal(0);
+    // amountPaid is 0 for every non-partially-paid status, so this nets out
+    // to the outstanding balance owed uniformly across all unpaid statuses.
+    const rowAmount = (g._sum.amount ?? new Prisma.Decimal(0)).sub(
+      g._sum.amountPaid ?? new Prisma.Decimal(0)
+    );
     totalsCount += g._count._all;
     totalsAmount = totalsAmount.add(rowAmount);
 
@@ -641,7 +675,7 @@ export async function getMyUnpaidExpenseSummary(
   const groups = await prisma.expense.groupBy({
     by: ["status"],
     where,
-    _sum: { amount: true },
+    _sum: { amount: true, amountPaid: true },
     _count: { _all: true },
   });
 
@@ -649,7 +683,9 @@ export async function getMyUnpaidExpenseSummary(
   let totalsAmount = new Prisma.Decimal(0);
 
   const byStatus: UnpaidExpenseSummaryStatusRow[] = groups.map((g) => {
-    const rowAmount = g._sum.amount ?? new Prisma.Decimal(0);
+    const rowAmount = (g._sum.amount ?? new Prisma.Decimal(0)).sub(
+      g._sum.amountPaid ?? new Prisma.Decimal(0)
+    );
     totalsCount += g._count._all;
     totalsAmount = totalsAmount.add(rowAmount);
     return {
@@ -694,6 +730,7 @@ export async function findById(
       },
       description: true,
       amount: true,
+      amountPaid: true,
       expenseDate: true,
       vendor: true,
       referenceNumber: true,
@@ -764,6 +801,7 @@ export async function findByExpenseNumber(
       },
       description: true,
       amount: true,
+      amountPaid: true,
       expenseDate: true,
       vendor: true,
       referenceNumber: true,
@@ -965,12 +1003,14 @@ export function mapExpenseStatusToJobCardStatus(
   expenseStatus: ExpenseStatus
 ): JobCardStatus | null {
   switch (expenseStatus) {
+    case "APPROVED":
+      return "APPROVED";
     case "PAID":
       return "COMPLETED";
     case "CANCELLED":
       return "CANCELLED";
     default:
-      // For DRAFT, PENDING, APPROVED, REJECTED - don't change job card status
+      // For DRAFT, PENDING, PARTIALLY_PAID, REJECTED - don't change job card status
       return null;
   }
 }
@@ -1190,6 +1230,12 @@ export async function update(
     updateData.rejectedAt = new Date();
   }
 
+  // Manually setting status straight to PAID (bypassing recordPayment) should
+  // still leave amountPaid consistent with the full amount
+  if (data.status === "PAID" && oldExpense && oldExpense.status !== "PAID") {
+    updateData.amountPaid = data.amount ?? oldExpense.amount;
+  }
+
   const expense = await prisma.expense.update({
     where: { id },
     data: updateData,
@@ -1270,8 +1316,14 @@ export async function syncExpensesWithJobCardStatus(
 
   for (const expense of expenses) {
     // Only update if the expense is not already in a terminal state
-    // (Don't revert PAID back to PENDING, etc.)
-    const terminalStates: ExpenseStatus[] = ["PAID", "REJECTED", "CANCELLED"];
+    // (Don't revert APPROVED/PAID/PARTIALLY_PAID back to PENDING, etc.)
+    const terminalStates: ExpenseStatus[] = [
+      "APPROVED",
+      "PAID",
+      "PARTIALLY_PAID",
+      "REJECTED",
+      "CANCELLED",
+    ];
     if (!terminalStates.includes(expense.status)) {
       await updateStatus(
         expense.id,
@@ -1344,14 +1396,209 @@ export async function approve(
 }
 
 /**
- * Mark expense as paid
+ * Record a payment (full or partial) against an approved expense.
+ * Moves the expense to PARTIALLY_PAID or PAID depending on the remaining balance.
+ */
+export async function recordPayment(
+  expenseId: string,
+  data: RecordPaymentData,
+  recordedById?: string
+): Promise<Expense> {
+  const expense = await prisma.expense.findUnique({ where: { id: expenseId } });
+  if (!expense) {
+    throw new Error("Expense not found");
+  }
+  if (!PAYABLE_EXPENSE_STATUSES.includes(expense.status)) {
+    throw new Error(
+      "Payments can only be recorded against approved or partially paid expenses"
+    );
+  }
+
+  const amount = new Prisma.Decimal(data.amount);
+  if (amount.lessThanOrEqualTo(0)) {
+    throw new Error("Payment amount must be greater than zero");
+  }
+
+  const remaining = expense.amount.sub(expense.amountPaid);
+  if (amount.greaterThan(remaining)) {
+    throw new Error(
+      `Payment amount exceeds remaining balance of ${remaining.toString()}`
+    );
+  }
+
+  const newAmountPaid = expense.amountPaid.add(amount);
+  const newStatus: ExpenseStatus = newAmountPaid.greaterThanOrEqualTo(
+    expense.amount
+  )
+    ? "PAID"
+    : "PARTIALLY_PAID";
+
+  const payment = await prisma.expensePayment.create({
+    data: {
+      expense: { connect: { id: expenseId } },
+      amount,
+      paymentDate: data.paymentDate ?? new Date(),
+      paymentMethod: data.paymentMethod ?? null,
+      referenceNumber: data.referenceNumber ?? null,
+      notes: data.notes ?? null,
+      ...(recordedById && { recordedBy: { connect: { id: recordedById } } }),
+    },
+  });
+
+  const updateData: Prisma.ExpenseUpdateInput = {
+    amountPaid: newAmountPaid,
+    status: newStatus,
+  };
+  if (data.paymentMethod) {
+    updateData.paymentMethod = data.paymentMethod;
+  }
+  if (data.referenceNumber) {
+    updateData.referenceNumber = data.referenceNumber;
+  }
+  if (newStatus === "PAID" && !expense.approvedAt) {
+    updateData.approvedAt = new Date();
+  }
+
+  const updatedExpense = await prisma.expense.update({
+    where: { id: expenseId },
+    data: updateData,
+  });
+
+  await createLog({
+    action: "CREATE",
+    entityType: "ExpensePayment",
+    entityId: payment.id,
+    ...(recordedById && { performedBy: recordedById }),
+    newData: payment,
+    metadata: JSON.stringify({ expenseId }),
+  });
+
+  await createLog({
+    action: "UPDATE",
+    entityType: "Expense",
+    entityId: expenseId,
+    ...(recordedById && { performedBy: recordedById }),
+    oldData: expense,
+    newData: updatedExpense,
+    metadata: JSON.stringify({ source: "PaymentRecorded", paymentId: payment.id }),
+  });
+
+  if (updatedExpense.jobCardId && newStatus !== expense.status) {
+    await syncJobCardFromExpenseStatus(
+      updatedExpense,
+      newStatus,
+      expense.status,
+      recordedById
+    );
+  }
+
+  notifyDirectorsAboutExpense(expenseId, "updated");
+
+  return updatedExpense;
+}
+
+/**
+ * List payments recorded against an expense, most recent first
+ */
+export async function getPayments(
+  expenseId: string
+): Promise<ExpensePaymentWithRecordedBy[]> {
+  return prisma.expensePayment.findMany({
+    where: { expenseId },
+    orderBy: { paymentDate: "desc" },
+    include: {
+      recordedBy: {
+        select: { id: true, firstName: true, lastName: true, email: true },
+      },
+    },
+  });
+}
+
+/**
+ * Delete a recorded payment and roll back the expense's amountPaid/status accordingly
+ */
+export async function deletePayment(
+  paymentId: string,
+  performedBy?: string
+): Promise<Expense> {
+  const payment = await prisma.expensePayment.findUnique({
+    where: { id: paymentId },
+  });
+  if (!payment) {
+    throw new Error("Payment not found");
+  }
+
+  const expense = await prisma.expense.findUnique({
+    where: { id: payment.expenseId },
+  });
+  if (!expense) {
+    throw new Error("Expense not found");
+  }
+
+  const rawAmountPaid = expense.amountPaid.sub(payment.amount);
+  const newAmountPaid = rawAmountPaid.lessThan(0)
+    ? new Prisma.Decimal(0)
+    : rawAmountPaid;
+  const newStatus: ExpenseStatus = newAmountPaid.greaterThanOrEqualTo(
+    expense.amount
+  )
+    ? "PAID"
+    : newAmountPaid.greaterThan(0)
+      ? "PARTIALLY_PAID"
+      : "APPROVED";
+
+  await prisma.expensePayment.delete({ where: { id: paymentId } });
+
+  const updatedExpense = await prisma.expense.update({
+    where: { id: expense.id },
+    data: { amountPaid: newAmountPaid, status: newStatus },
+  });
+
+  await createLog({
+    action: "DELETE",
+    entityType: "ExpensePayment",
+    entityId: paymentId,
+    ...(performedBy && { performedBy }),
+    oldData: payment,
+    metadata: JSON.stringify({ expenseId: expense.id }),
+  });
+
+  await createLog({
+    action: "UPDATE",
+    entityType: "Expense",
+    entityId: expense.id,
+    ...(performedBy && { performedBy }),
+    oldData: expense,
+    newData: updatedExpense,
+    metadata: JSON.stringify({ source: "PaymentDeleted", paymentId }),
+  });
+
+  return updatedExpense;
+}
+
+/**
+ * Mark expense as fully paid in one step (records a payment for the full remaining balance)
  */
 export async function markAsPaid(
   id: string,
   approvedById: string,
   performedBy?: string
 ): Promise<Expense> {
-  return updateStatus(id, "PAID", performedBy, { approvedById });
+  const expense = await prisma.expense.findUnique({ where: { id } });
+  if (!expense) {
+    throw new Error("Expense not found");
+  }
+
+  const remaining = expense.amount.sub(expense.amountPaid);
+  if (remaining.lessThanOrEqualTo(0)) {
+    return expense;
+  }
+
+  return recordPayment(
+    id,
+    { amount: remaining, paymentMethod: expense.paymentMethod },
+    performedBy ?? approvedById
+  );
 }
 
 /**

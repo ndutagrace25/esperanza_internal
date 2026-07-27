@@ -1,6 +1,6 @@
 import { prisma } from "../lib/prisma.js";
 import { Prisma } from "@prisma/client";
-import type { Sale } from "@prisma/client";
+import type { CommissionType, PaymentMethod, Sale } from "@prisma/client";
 import { createLog } from "./systemLogService.js";
 import {
   extendClientLicense,
@@ -16,11 +16,20 @@ export type FirstInstallmentData = {
 
 export type CreateSaleData = Omit<
   Prisma.SaleCreateInput,
-  "client" | "items" | "createdAt" | "updatedAt" | "saleNumber" | "totalAmount"
+  | "client"
+  | "items"
+  | "createdAt"
+  | "updatedAt"
+  | "saleNumber"
+  | "totalAmount"
+  | "commissionSalesPerson"
+  | "commissionAmount"
+  | "commissionPaidAmount"
 > & {
   clientId: string;
   items?: Array<Omit<CreateSaleItemData, "saleId">>;
   firstInstallment?: FirstInstallmentData;
+  commissionSalesPersonId?: string | null;
 };
 
 export type UpdateSaleData = Partial<
@@ -32,9 +41,13 @@ export type UpdateSaleData = Partial<
     | "updatedAt"
     | "saleNumber"
     | "totalAmount"
+    | "commissionSalesPerson"
+    | "commissionAmount"
+    | "commissionPaidAmount"
   >
 > & {
   clientId?: string;
+  commissionSalesPersonId?: string | null;
 };
 
 export type CreateSaleItemData = Omit<
@@ -189,6 +202,18 @@ type SaleWithRelations = {
   notes: string | null;
   requestedPaymentDateExtension: boolean;
   paymentExtensionDueDate: Date | null;
+  commissionSalesPersonId: string | null;
+  commissionSalesPerson: {
+    id: string;
+    name: string;
+    phone: string | null;
+    email: string | null;
+    status: string;
+  } | null;
+  commissionType: CommissionType | null;
+  commissionRate: Prisma.Decimal | null;
+  commissionAmount: Prisma.Decimal;
+  commissionPaidAmount: Prisma.Decimal;
   items: Array<{
     id: string;
     productId: string;
@@ -270,6 +295,62 @@ function assertSaleNotCancelled(status: string, verb: string): void {
   }
 }
 
+/**
+ * Derive a sale's commission amount from its (snapshotted) type/rate and totalAmount.
+ * FIXED is a flat KES amount; PERCENTAGE is a percent of totalAmount.
+ */
+function computeCommissionAmount(
+  commissionType: CommissionType | null | undefined,
+  commissionRate: Prisma.Decimal | number | string | null | undefined,
+  totalAmount: Prisma.Decimal
+): Prisma.Decimal {
+  if (!commissionType || commissionRate == null) {
+    return new Prisma.Decimal(0);
+  }
+  const rate = new Prisma.Decimal(commissionRate);
+  if (commissionType === "FIXED") {
+    return rate;
+  }
+  return totalAmount.mul(rate).div(100);
+}
+
+/** Commission requires a sales person, and a sane value for its type. */
+function assertCommissionConfig(
+  commissionType: CommissionType | null | undefined,
+  commissionRate: unknown,
+  commissionSalesPersonId: string | null | undefined
+): void {
+  if (!commissionType) return;
+  if (!commissionSalesPersonId) {
+    throw new Error("A sales person must be set to configure commission");
+  }
+  const value = commissionRate != null ? Number(commissionRate) : NaN;
+  if (isNaN(value) || value <= 0) {
+    throw new Error("Commission value must be greater than zero");
+  }
+  if (commissionType === "PERCENTAGE" && value > 100) {
+    throw new Error("Commission percentage cannot exceed 100");
+  }
+}
+
+/** Record a SaleAmountHistory row if the sale's totalAmount actually changed. */
+async function logSaleAmountChange(
+  saleId: string,
+  oldAmount: Prisma.Decimal,
+  newAmount: Prisma.Decimal,
+  performedBy?: string
+): Promise<void> {
+  if (oldAmount.equals(newAmount)) return;
+  await prisma.saleAmountHistory.create({
+    data: {
+      sale: { connect: { id: saleId } },
+      oldAmount,
+      newAmount,
+      ...(performedBy && { changedBy: { connect: { id: performedBy } } }),
+    },
+  });
+}
+
 export async function findAll(
   options: PaginationOptions = {}
 ): Promise<PaginatedResult<SaleWithRelations>> {
@@ -344,6 +425,20 @@ export async function findAll(
       notes: true,
       requestedPaymentDateExtension: true,
       paymentExtensionDueDate: true,
+      commissionSalesPersonId: true,
+      commissionSalesPerson: {
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          email: true,
+          status: true,
+        },
+      },
+      commissionType: true,
+      commissionRate: true,
+      commissionAmount: true,
+      commissionPaidAmount: true,
       items: {
         select: {
           id: true,
@@ -428,6 +523,20 @@ export async function findById(id: string): Promise<SaleWithRelations | null> {
       notes: true,
       requestedPaymentDateExtension: true,
       paymentExtensionDueDate: true,
+      commissionSalesPersonId: true,
+      commissionSalesPerson: {
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          email: true,
+          status: true,
+        },
+      },
+      commissionType: true,
+      commissionRate: true,
+      commissionAmount: true,
+      commissionPaidAmount: true,
       items: {
         select: {
           id: true,
@@ -496,6 +605,20 @@ export async function findBySaleNumber(
       notes: true,
       requestedPaymentDateExtension: true,
       paymentExtensionDueDate: true,
+      commissionSalesPersonId: true,
+      commissionSalesPerson: {
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          email: true,
+          status: true,
+        },
+      },
+      commissionType: true,
+      commissionRate: true,
+      commissionAmount: true,
+      commissionPaidAmount: true,
       items: {
         select: {
           id: true,
@@ -541,12 +664,24 @@ export async function create(
   data: CreateSaleData,
   performedBy?: string
 ): Promise<Sale | SaleWithRelations> {
-  const { clientId, items, firstInstallment, ...saleData } = data;
+  const {
+    clientId,
+    items,
+    firstInstallment,
+    commissionSalesPersonId,
+    ...saleData
+  } = data;
 
   // Validate that items are provided
   if (!items || items.length === 0) {
     throw new Error("At least one sale item is required");
   }
+
+  assertCommissionConfig(
+    saleData.commissionType as CommissionType | null | undefined,
+    saleData.commissionRate,
+    commissionSalesPersonId
+  );
 
   // Generate unique sale number
   const saleNumber = await generateSaleNumber();
@@ -562,6 +697,18 @@ export async function create(
       connect: { id: clientId },
     },
   };
+
+  if (commissionSalesPersonId) {
+    createData.commissionSalesPerson = { connect: { id: commissionSalesPersonId } };
+  }
+
+  if (saleData.commissionType && saleData.commissionRate != null) {
+    createData.commissionAmount = computeCommissionAmount(
+      saleData.commissionType as CommissionType,
+      saleData.commissionRate as Prisma.Decimal | number | string,
+      totalAmount
+    );
+  }
 
   // Add items if provided
   if (items && items.length > 0) {
@@ -592,6 +739,15 @@ export async function create(
           contactPerson: true,
           email: true,
           phone: true,
+        },
+      },
+      commissionSalesPerson: {
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          email: true,
+          status: true,
         },
       },
       items: {
@@ -685,7 +841,7 @@ export async function update(
   data: UpdateSaleData,
   performedBy?: string
 ): Promise<Sale> {
-  const { clientId, ...updateData } = data;
+  const { clientId, commissionSalesPersonId, ...updateData } = data;
 
   // Get existing sale to compare
   const existingSale = await prisma.sale.findUnique({
@@ -701,6 +857,24 @@ export async function update(
 
   assertSaleNotCancelled(existingSale.status, "edit");
 
+  const effectiveCommissionSalesPersonId =
+    commissionSalesPersonId !== undefined
+      ? commissionSalesPersonId
+      : existingSale.commissionSalesPersonId;
+  const effectiveCommissionType =
+    updateData.commissionType !== undefined
+      ? (updateData.commissionType as CommissionType | null)
+      : existingSale.commissionType;
+  const effectiveCommissionRate =
+    updateData.commissionRate !== undefined
+      ? updateData.commissionRate
+      : existingSale.commissionRate;
+  assertCommissionConfig(
+    effectiveCommissionType,
+    effectiveCommissionRate,
+    effectiveCommissionSalesPersonId
+  );
+
   // Build update data
   const saleUpdateData: Prisma.SaleUpdateInput = { ...updateData };
 
@@ -710,13 +884,27 @@ export async function update(
     };
   }
 
+  if (commissionSalesPersonId !== undefined) {
+    saleUpdateData.commissionSalesPerson =
+      commissionSalesPersonId === null
+        ? { disconnect: true }
+        : { connect: { id: commissionSalesPersonId } };
+  }
+
   // If items are being updated, recalculate totalAmount
   // Note: For simplicity, we'll require items to be updated separately via item endpoints
   // Recalculate from existing items
   const items = existingSale.items;
+  const newTotalAmount =
+    items.length > 0 ? calculateTotalAmount(items) : existingSale.totalAmount;
   if (items.length > 0) {
-    saleUpdateData.totalAmount = calculateTotalAmount(items);
+    saleUpdateData.totalAmount = newTotalAmount;
   }
+  saleUpdateData.commissionAmount = computeCommissionAmount(
+    effectiveCommissionType,
+    effectiveCommissionRate as Prisma.Decimal | number | string | null | undefined,
+    newTotalAmount
+  );
 
   // When user sets a payment extension date, extend the client's system license expiry via their API
   const extensionDate =
@@ -738,6 +926,15 @@ export async function update(
           contactPerson: true,
           email: true,
           phone: true,
+        },
+      },
+      commissionSalesPerson: {
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          email: true,
+          status: true,
         },
       },
       items: {
@@ -882,16 +1079,22 @@ export async function createItem(
     },
   });
 
-  // Recalculate and update sale totalAmount
+  // Recalculate and update sale totalAmount (+ dependent commission amount)
   const allItems = await prisma.saleItem.findMany({
     where: { saleId },
   });
 
   const newTotal = calculateTotalAmount(allItems);
+  const newCommissionAmount = computeCommissionAmount(
+    sale.commissionType,
+    sale.commissionRate,
+    newTotal
+  );
   await prisma.sale.update({
     where: { id: saleId },
-    data: { totalAmount: newTotal },
+    data: { totalAmount: newTotal, commissionAmount: newCommissionAmount },
   });
+  await logSaleAmountChange(saleId, sale.totalAmount, newTotal, performedBy);
 
   // Log the creation
   await createLog({
@@ -935,7 +1138,12 @@ export async function updateItem(
 
   const parentSale = await prisma.sale.findUnique({
     where: { id: existingItem.saleId },
-    select: { status: true },
+    select: {
+      status: true,
+      totalAmount: true,
+      commissionType: true,
+      commissionRate: true,
+    },
   });
   if (!parentSale) {
     throw new Error("Sale not found");
@@ -969,16 +1177,27 @@ export async function updateItem(
     },
   });
 
-  // Recalculate and update sale totalAmount
+  // Recalculate and update sale totalAmount (+ dependent commission amount)
   const allItems = await prisma.saleItem.findMany({
     where: { saleId: existingItem.saleId },
   });
 
   const newTotal = calculateTotalAmount(allItems);
+  const newCommissionAmount = computeCommissionAmount(
+    parentSale.commissionType,
+    parentSale.commissionRate,
+    newTotal
+  );
   await prisma.sale.update({
     where: { id: existingItem.saleId },
-    data: { totalAmount: newTotal },
+    data: { totalAmount: newTotal, commissionAmount: newCommissionAmount },
   });
+  await logSaleAmountChange(
+    existingItem.saleId,
+    parentSale.totalAmount,
+    newTotal,
+    performedBy
+  );
 
   // Log the update
   await createLog({
@@ -1008,7 +1227,12 @@ export async function deleteItem(
 
   const parentSale = await prisma.sale.findUnique({
     where: { id: existingItem.saleId },
-    select: { status: true },
+    select: {
+      status: true,
+      totalAmount: true,
+      commissionType: true,
+      commissionRate: true,
+    },
   });
   if (!parentSale) {
     throw new Error("Sale not found");
@@ -1021,7 +1245,7 @@ export async function deleteItem(
     where: { id },
   });
 
-  // Recalculate and update sale totalAmount
+  // Recalculate and update sale totalAmount (+ dependent commission amount)
   const allItems = await prisma.saleItem.findMany({
     where: { saleId },
   });
@@ -1030,10 +1254,16 @@ export async function deleteItem(
     allItems.length > 0
       ? calculateTotalAmount(allItems)
       : new Prisma.Decimal(0);
+  const newCommissionAmount = computeCommissionAmount(
+    parentSale.commissionType,
+    parentSale.commissionRate,
+    newTotal
+  );
   await prisma.sale.update({
     where: { id: saleId },
-    data: { totalAmount: newTotal },
+    data: { totalAmount: newTotal, commissionAmount: newCommissionAmount },
   });
+  await logSaleAmountChange(saleId, parentSale.totalAmount, newTotal, performedBy);
 
   // Log the deletion
   await createLog({
@@ -1265,5 +1495,328 @@ export async function deleteInstallment(
     ...(performedBy && { performedBy }),
     oldData: existing,
     metadata: JSON.stringify({ saleId }),
+  });
+}
+
+// --- Sale commission payments ---
+
+export type RecordCommissionPaymentData = {
+  amount: Prisma.Decimal | number | string;
+  paymentMethod?: PaymentMethod | null;
+  referenceNumber?: string | null;
+  paymentDate?: Date;
+  notes?: string | null;
+};
+
+/**
+ * Record a payout (full or partial) of a sale's commission to its credited sales person.
+ */
+export async function recordCommissionPayment(
+  saleId: string,
+  data: RecordCommissionPaymentData,
+  recordedById?: string
+): Promise<Sale> {
+  const sale = await prisma.sale.findUnique({ where: { id: saleId } });
+  if (!sale) {
+    throw new Error("Sale not found");
+  }
+  assertSaleNotCancelled(sale.status, "record commission payments on");
+
+  if (!sale.commissionSalesPersonId || sale.commissionAmount.lessThanOrEqualTo(0)) {
+    throw new Error("This sale has no commission to pay out");
+  }
+
+  const amount = new Prisma.Decimal(data.amount);
+  if (amount.lessThanOrEqualTo(0)) {
+    throw new Error("Payment amount must be greater than zero");
+  }
+
+  const remaining = sale.commissionAmount.sub(sale.commissionPaidAmount);
+  if (amount.greaterThan(remaining)) {
+    throw new Error(
+      `Payment amount exceeds remaining commission balance of ${remaining.toString()}`
+    );
+  }
+
+  const newPaidAmount = sale.commissionPaidAmount.add(amount);
+
+  const payment = await prisma.saleCommissionPayment.create({
+    data: {
+      sale: { connect: { id: saleId } },
+      amount,
+      paymentDate: data.paymentDate ?? new Date(),
+      paymentMethod: data.paymentMethod ?? null,
+      referenceNumber: data.referenceNumber ?? null,
+      notes: data.notes ?? null,
+      ...(recordedById && { recordedBy: { connect: { id: recordedById } } }),
+    },
+  });
+
+  const updatedSale = await prisma.sale.update({
+    where: { id: saleId },
+    data: { commissionPaidAmount: newPaidAmount },
+  });
+
+  await createLog({
+    action: "CREATE",
+    entityType: "SaleCommissionPayment",
+    entityId: payment.id,
+    ...(recordedById && { performedBy: recordedById }),
+    newData: payment,
+    metadata: JSON.stringify({ saleId }),
+  });
+
+  return updatedSale;
+}
+
+export async function getCommissionPayments(saleId: string) {
+  return prisma.saleCommissionPayment.findMany({
+    where: { saleId },
+    orderBy: { paymentDate: "desc" },
+    include: {
+      recordedBy: {
+        select: { id: true, firstName: true, lastName: true, email: true },
+      },
+    },
+  });
+}
+
+/** Delete a recorded commission payment (corrects a mistaken entry). */
+export async function deleteCommissionPayment(
+  paymentId: string,
+  performedBy?: string
+): Promise<Sale> {
+  const payment = await prisma.saleCommissionPayment.findUnique({
+    where: { id: paymentId },
+  });
+  if (!payment) {
+    throw new Error("Commission payment not found");
+  }
+
+  const sale = await prisma.sale.findUnique({ where: { id: payment.saleId } });
+  if (!sale) {
+    throw new Error("Sale not found");
+  }
+
+  const rawPaidAmount = sale.commissionPaidAmount.sub(payment.amount);
+  const newPaidAmount = rawPaidAmount.lessThan(0)
+    ? new Prisma.Decimal(0)
+    : rawPaidAmount;
+
+  await prisma.saleCommissionPayment.delete({ where: { id: paymentId } });
+
+  const updatedSale = await prisma.sale.update({
+    where: { id: sale.id },
+    data: { commissionPaidAmount: newPaidAmount },
+  });
+
+  await createLog({
+    action: "DELETE",
+    entityType: "SaleCommissionPayment",
+    entityId: paymentId,
+    ...(performedBy && { performedBy }),
+    oldData: payment,
+    metadata: JSON.stringify({ saleId: sale.id }),
+  });
+
+  return updatedSale;
+}
+
+// --- Sale amount history ---
+
+export async function getSaleAmountHistory(saleId: string) {
+  return prisma.saleAmountHistory.findMany({
+    where: { saleId },
+    orderBy: { createdAt: "desc" },
+    include: {
+      changedBy: {
+        select: { id: true, firstName: true, lastName: true, email: true },
+      },
+    },
+  });
+}
+
+// --- Commission summary (director-only Commissions page) ---
+
+export type CommissionSummaryRow = {
+  salesPerson: {
+    id: string;
+    name: string;
+    phone: string | null;
+    email: string | null;
+    status: string;
+  };
+  saleCount: number;
+  totalCommission: string;
+  totalPaid: string;
+  totalOutstanding: string;
+};
+
+export type CommissionSummary = {
+  bySalesPerson: CommissionSummaryRow[];
+  totals: {
+    saleCount: number;
+    totalCommission: string;
+    totalPaid: string;
+    totalOutstanding: string;
+  };
+};
+
+/**
+ * Aggregate commission earned/paid/outstanding per sales person, across all
+ * non-cancelled sales that have a commission configured.
+ */
+export async function getCommissionSummary(): Promise<CommissionSummary> {
+  const sales = await prisma.sale.findMany({
+    where: {
+      status: { not: "CANCELLED" },
+      commissionSalesPersonId: { not: null },
+    },
+    select: {
+      commissionSalesPersonId: true,
+      commissionSalesPerson: {
+        select: { id: true, name: true, phone: true, email: true, status: true },
+      },
+      commissionAmount: true,
+      commissionPaidAmount: true,
+    },
+  });
+
+  type Bucket = {
+    salesPerson: CommissionSummaryRow["salesPerson"];
+    saleCount: number;
+    totalCommission: Prisma.Decimal;
+    totalPaid: Prisma.Decimal;
+  };
+
+  const buckets = new Map<string, Bucket>();
+
+  for (const s of sales) {
+    if (!s.commissionSalesPersonId || !s.commissionSalesPerson) continue;
+    const key = s.commissionSalesPersonId;
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = {
+        salesPerson: s.commissionSalesPerson,
+        saleCount: 0,
+        totalCommission: new Prisma.Decimal(0),
+        totalPaid: new Prisma.Decimal(0),
+      };
+      buckets.set(key, bucket);
+    }
+    bucket.saleCount += 1;
+    bucket.totalCommission = bucket.totalCommission.add(s.commissionAmount);
+    bucket.totalPaid = bucket.totalPaid.add(s.commissionPaidAmount);
+  }
+
+  const bySalesPerson: CommissionSummaryRow[] = [...buckets.values()]
+    .map((b) => ({
+      salesPerson: b.salesPerson,
+      saleCount: b.saleCount,
+      totalCommission: b.totalCommission.toString(),
+      totalPaid: b.totalPaid.toString(),
+      totalOutstanding: b.totalCommission.sub(b.totalPaid).toString(),
+    }))
+    .sort(
+      (a, b) => Number(b.totalOutstanding) - Number(a.totalOutstanding)
+    );
+
+  const totals = bySalesPerson.reduce(
+    (acc, row) => ({
+      saleCount: acc.saleCount + row.saleCount,
+      totalCommission: acc.totalCommission.add(new Prisma.Decimal(row.totalCommission)),
+      totalPaid: acc.totalPaid.add(new Prisma.Decimal(row.totalPaid)),
+    }),
+    {
+      saleCount: 0,
+      totalCommission: new Prisma.Decimal(0),
+      totalPaid: new Prisma.Decimal(0),
+    }
+  );
+
+  return {
+    bySalesPerson,
+    totals: {
+      saleCount: totals.saleCount,
+      totalCommission: totals.totalCommission.toString(),
+      totalPaid: totals.totalPaid.toString(),
+      totalOutstanding: totals.totalCommission.sub(totals.totalPaid).toString(),
+    },
+  };
+}
+
+/** Sales (with commission info) credited to a specific sales person — for the Commissions page drill-down. */
+export async function getSalesForSalesPerson(
+  salesPersonId: string
+): Promise<SaleWithRelations[]> {
+  return prisma.sale.findMany({
+    where: { commissionSalesPersonId: salesPersonId, status: { not: "CANCELLED" } },
+    select: {
+      id: true,
+      saleNumber: true,
+      clientId: true,
+      client: {
+        select: {
+          id: true,
+          companyName: true,
+          contactPerson: true,
+          email: true,
+          phone: true,
+        },
+      },
+      saleDate: true,
+      status: true,
+      totalAmount: true,
+      agreedMonthlyInstallmentAmount: true,
+      paidAmount: true,
+      completedAt: true,
+      notes: true,
+      requestedPaymentDateExtension: true,
+      paymentExtensionDueDate: true,
+      commissionSalesPersonId: true,
+      commissionSalesPerson: {
+        select: { id: true, name: true, phone: true, email: true, status: true },
+      },
+      commissionType: true,
+      commissionRate: true,
+      commissionAmount: true,
+      commissionPaidAmount: true,
+      items: {
+        select: {
+          id: true,
+          productId: true,
+          product: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              sku: true,
+              barcode: true,
+            },
+          },
+          quantity: true,
+          unitPrice: true,
+          totalPrice: true,
+        },
+        orderBy: { createdAt: "asc" },
+      },
+      installments: {
+        select: {
+          id: true,
+          saleId: true,
+          amount: true,
+          dueDate: true,
+          paidAt: true,
+          status: true,
+          notes: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: { paidAt: "asc" },
+      },
+      createdAt: true,
+      updatedAt: true,
+    },
+    orderBy: { saleDate: "desc" },
   });
 }

@@ -3,6 +3,30 @@ import { getParam } from "../utils/params.js";
 import * as jobCardService from "../services/jobCardService.js";
 import { generateJobCardPdf } from "../services/jobCardPdfService.js";
 
+/**
+ * Blocks STAFF from mutating a job card (or its tasks/quick expenses) once
+ * any linked expense has passed approval. Directors are never blocked.
+ * Returns true (and writes the 403 response) if the request was blocked.
+ */
+async function blockIfLockedForStaff(
+  req: Request,
+  res: Response,
+  jobCardId: string | null
+): Promise<boolean> {
+  if (req.employee?.roleName !== "STAFF" || !jobCardId) {
+    return false;
+  }
+  const locked = await jobCardService.isJobCardLockedForStaff(jobCardId);
+  if (locked) {
+    res.status(403).json({
+      error:
+        "This job card has an approved expense and can no longer be edited by staff.",
+    });
+    return true;
+  }
+  return false;
+}
+
 export async function getAll(req: Request, res: Response): Promise<void> {
   try {
     // Get pagination parameters from query string
@@ -126,6 +150,10 @@ export async function update(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    if (await blockIfLockedForStaff(req, res, id)) {
+      return;
+    }
+
     // STAFF role cannot update job card status - remove status from update data
     const updateData = { ...req.body };
     if (req.employee?.roleName === "STAFF" && updateData.status !== undefined) {
@@ -176,6 +204,10 @@ export async function createTask(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    if (await blockIfLockedForStaff(req, res, jobCardId)) {
+      return;
+    }
+
     const task = await jobCardService.createTask(
       { ...req.body, jobCardId },
       req.employee?.id
@@ -194,6 +226,11 @@ export async function updateTask(req: Request, res: Response): Promise<void> {
     const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Task ID is required" });
+      return;
+    }
+
+    const jobCardId = await jobCardService.getTaskJobCardId(id);
+    if (await blockIfLockedForStaff(req, res, jobCardId)) {
       return;
     }
 
@@ -219,6 +256,11 @@ export async function deleteTask(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    const jobCardId = await jobCardService.getTaskJobCardId(id);
+    if (await blockIfLockedForStaff(req, res, jobCardId)) {
+      return;
+    }
+
     const task = await jobCardService.deleteTask(id, req.employee?.id);
     res.json(task);
   } catch (error) {
@@ -238,6 +280,10 @@ export async function createExpense(
     const jobCardId = getParam(req.params["jobCardId"]);
     if (!jobCardId) {
       res.status(400).json({ error: "Job card ID is required" });
+      return;
+    }
+
+    if (await blockIfLockedForStaff(req, res, jobCardId)) {
       return;
     }
 
@@ -265,6 +311,11 @@ export async function updateExpense(
       return;
     }
 
+    const jobCardId = await jobCardService.getJobExpenseJobCardId(id);
+    if (await blockIfLockedForStaff(req, res, jobCardId)) {
+      return;
+    }
+
     const expense = await jobCardService.updateExpense(
       id,
       req.body,
@@ -287,6 +338,11 @@ export async function deleteExpense(
     const id = getParam(req.params["id"]);
     if (!id) {
       res.status(400).json({ error: "Expense ID is required" });
+      return;
+    }
+
+    const jobCardId = await jobCardService.getJobExpenseJobCardId(id);
+    if (await blockIfLockedForStaff(req, res, jobCardId)) {
       return;
     }
 

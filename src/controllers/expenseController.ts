@@ -339,6 +339,94 @@ export async function markAsPaid(req: Request, res: Response): Promise<void> {
 }
 
 /**
+ * List payments recorded against an expense
+ */
+export async function getPayments(req: Request, res: Response): Promise<void> {
+  try {
+    const id = getParam(req.params["id"]);
+    if (!id) {
+      res.status(400).json({ error: "Expense ID is required" });
+      return;
+    }
+
+    const payments = await expenseService.getPayments(id);
+    res.json(payments);
+  } catch (error) {
+    console.error("Error fetching expense payments:", error);
+    res.status(500).json({ error: "Failed to fetch expense payments" });
+  }
+}
+
+/**
+ * Record a payment (full or partial) against an approved expense
+ */
+export async function recordPayment(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const id = getParam(req.params["id"]);
+    if (!id) {
+      res.status(400).json({ error: "Expense ID is required" });
+      return;
+    }
+
+    const { amount, paymentMethod, referenceNumber, paymentDate, notes } =
+      req.body;
+
+    if (!amount) {
+      res.status(400).json({ error: "Payment amount is required" });
+      return;
+    }
+
+    const expense = await expenseService.recordPayment(
+      id,
+      {
+        amount,
+        paymentMethod: paymentMethod || null,
+        referenceNumber: referenceNumber || null,
+        notes: notes || null,
+        ...(paymentDate && { paymentDate: new Date(paymentDate) }),
+      },
+      req.employee?.id
+    );
+    res.status(201).json(expense);
+  } catch (error) {
+    console.error("Error recording expense payment:", error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Failed to record payment";
+    res.status(400).json({ error: errorMessage });
+  }
+}
+
+/**
+ * Delete a recorded payment (corrects a mistaken entry)
+ */
+export async function deletePayment(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const paymentId = getParam(req.params["paymentId"]);
+    if (!paymentId) {
+      res.status(400).json({ error: "Payment ID is required" });
+      return;
+    }
+
+    const expense = await expenseService.deletePayment(
+      paymentId,
+      req.employee?.id
+    );
+    res.json(expense);
+  } catch (error) {
+    console.error("Error deleting expense payment:", error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Failed to delete payment";
+    res.status(400).json({ error: errorMessage });
+  }
+}
+
+/**
  * Reject an expense
  */
 export async function reject(req: Request, res: Response): Promise<void> {

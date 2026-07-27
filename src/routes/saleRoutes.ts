@@ -12,6 +12,18 @@ router.get(
   saleController.getUnpaidTotals
 );
 
+// Commission summary + per-salesperson drill-down (before /:id to avoid conflicts)
+router.get(
+  "/commissions/summary",
+  authorize("DIRECTOR"),
+  saleController.getCommissionSummary
+);
+router.get(
+  "/commissions/by-sales-person/:salesPersonId",
+  authorize("DIRECTOR"),
+  saleController.getSalesForSalesPerson
+);
+
 // Get sale by sale number (before /:id route to avoid conflicts)
 router.get(
   "/sale-number/:saleNumber",
@@ -56,6 +68,30 @@ router.delete(
   "/installments/:id",
   authorize("DIRECTOR"),
   saleController.deleteInstallment
+);
+
+// Sale commission payments (commission-payments path before :id for PATCH/DELETE)
+router.get(
+  "/:saleId/commission-payments",
+  authorize("DIRECTOR"),
+  saleController.getCommissionPayments
+);
+router.post(
+  "/:saleId/commission-payments",
+  authorize("DIRECTOR"),
+  saleController.recordCommissionPayment
+);
+router.delete(
+  "/commission-payments/:paymentId",
+  authorize("DIRECTOR"),
+  saleController.deleteCommissionPayment
+);
+
+// Sale amount history (audit trail of totalAmount changes)
+router.get(
+  "/:saleId/amount-history",
+  authorize("DIRECTOR"),
+  saleController.getAmountHistory
 );
 
 export default router;
