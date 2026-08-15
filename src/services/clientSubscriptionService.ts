@@ -133,7 +133,7 @@ type SubscriptionForRenew = {
  */
 async function pushLicenseExpiryToClientSystem(
   subscription: SubscriptionForRenew,
-  licenseExpiryDate: string
+  licenseExpiryDate: string | Date
 ): Promise<void> {
   const updateUrl = buildCompanyUpdateUrl(
     subscription.apiBaseUrl,
@@ -209,11 +209,16 @@ export async function create(
     throw new Error("Client not found");
   }
 
+  const code = normalizeSubscriptionCode(data.code);
+  const apiBaseUrl = normalizeApiBaseUrl(data.apiBaseUrl);
+
+  await pushLicenseExpiryToClientSystem({ apiBaseUrl, code }, data.expiryDate);
+
   const subscription = await prisma.clientSubscription.create({
     data: {
       clientId: data.clientId,
-      code: normalizeSubscriptionCode(data.code),
-      apiBaseUrl: normalizeApiBaseUrl(data.apiBaseUrl),
+      code,
+      apiBaseUrl,
       expiryDate: parseExpiryDate(data.expiryDate),
       status: data.status ?? "active",
     },
