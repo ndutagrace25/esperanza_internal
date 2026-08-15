@@ -61,6 +61,7 @@ export type CreateExpenseFromJobExpenseData = {
   expenseDate: Date;
   submittedById: string | null;
   jobCardStatus: JobCardStatus;
+  clientName?: string | null;
 };
 
 export type PaginationOptions = {
@@ -951,10 +952,15 @@ export async function createFromJobExpense(
   // Generate expense number
   const expenseNumber = await generateExpenseNumber();
 
+  const baseDescription = data.description || data.category;
+  const description = data.clientName
+    ? `${baseDescription} - ${data.clientName}`
+    : baseDescription;
+
   const createData: Prisma.ExpenseCreateInput = {
     expenseNumber,
     category: { connect: { id: category.id } },
-    description: data.description || data.category,
+    description,
     amount: data.amount,
     expenseDate: data.expenseDate,
     status: expenseStatus,

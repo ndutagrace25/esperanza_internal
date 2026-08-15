@@ -686,6 +686,7 @@ export async function create(
             expenseDate: jobCard.visitDate,
             submittedById: jobCard.supportStaffId,
             jobCardStatus: jobCard.status as JobCardStatus,
+            clientName: jobCard.client?.companyName,
           },
           performedBy
         );
@@ -1032,6 +1033,11 @@ export async function createExpense(
         visitDate: true,
         status: true,
         supportStaffId: true,
+        client: {
+          select: {
+            companyName: true,
+          },
+        },
       },
     });
 
@@ -1048,6 +1054,7 @@ export async function createExpense(
           expenseDate: jobCard.visitDate,
           submittedById: jobCard.supportStaffId,
           jobCardStatus: jobCard.status as JobCardStatus,
+          clientName: jobCard.client?.companyName,
         },
         performedBy
       );
