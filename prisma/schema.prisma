@@ -156,6 +156,7 @@ model ClientSubscription {
   @@index([clientId])
   @@index([status])
   @@index([expiryDate])
+  @@index([code])
 }
 
 enum ClientStatus {

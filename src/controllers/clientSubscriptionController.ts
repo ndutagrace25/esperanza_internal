@@ -45,6 +45,36 @@ export async function getById(req: Request, res: Response): Promise<void> {
   }
 }
 
+/**
+ * Public endpoint — no authentication. Looks up a client's API base URL by
+ * their subscription code.
+ */
+export async function getApiBaseUrlByCode(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const code = getParam(req.params["code"]);
+    if (!code) {
+      res.status(400).json({ error: "Code is required" });
+      return;
+    }
+
+    const apiBaseUrl = await clientSubscriptionService.findApiBaseUrlByCode(
+      code
+    );
+    if (!apiBaseUrl) {
+      res.status(404).json({ error: "No subscription found for this code" });
+      return;
+    }
+
+    res.json({ apiBaseUrl });
+  } catch (error) {
+    console.error("Error looking up client subscription by code:", error);
+    res.status(500).json({ error: "Failed to look up subscription" });
+  }
+}
+
 export async function create(req: Request, res: Response): Promise<void> {
   try {
     const subscription = await clientSubscriptionService.create(

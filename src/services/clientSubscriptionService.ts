@@ -197,6 +197,27 @@ export async function findById(id: string) {
   });
 }
 
+/**
+ * Public lookup by company code — returns only the API base URL.
+ * No login required.
+ */
+export async function findApiBaseUrlByCode(
+  code: string
+): Promise<string | null> {
+  const normalizedCode = normalizeSubscriptionCode(code);
+  if (!normalizedCode) {
+    return null;
+  }
+
+  const subscription = await prisma.clientSubscription.findFirst({
+    where: { code: normalizedCode },
+    select: { apiBaseUrl: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return subscription?.apiBaseUrl ?? null;
+}
+
 export async function create(
   data: CreateClientSubscriptionData,
   performedBy?: string

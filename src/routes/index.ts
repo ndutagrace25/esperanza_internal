@@ -12,12 +12,14 @@ import expenseRoutes from "./expenseRoutes.js";
 import clientIntegrationRoutes from "./clientIntegrationRoutes.js";
 import clientSubscriptionRoutes from "./clientSubscriptionRoutes.js";
 import smsRoutes from "./smsRoutes.js";
+import publicRoutes from "./publicRoutes.js";
 import { authenticate } from "../middleware/auth.js";
 
 const router = Router();
 
 // Public routes (no authentication required)
 router.use("/auth", authRoutes);
+router.use("/", publicRoutes);
 
 // Protected routes (authentication required)
 router.use("/employees", authenticate, employeeRoutes);
