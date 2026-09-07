@@ -60,15 +60,13 @@ export async function getApiBaseUrlByCode(
       return;
     }
 
-    const apiBaseUrl = await clientSubscriptionService.findApiBaseUrlByCode(
-      code
-    );
-    if (!apiBaseUrl) {
+    const result = await clientSubscriptionService.findApiBaseUrlByCode(code);
+    if (!result) {
       res.status(404).json({ error: "No subscription found for this code" });
       return;
     }
 
-    res.json({ apiBaseUrl });
+    res.json(result);
   } catch (error) {
     console.error("Error looking up client subscription by code:", error);
     res.status(500).json({ error: "Failed to look up subscription" });
