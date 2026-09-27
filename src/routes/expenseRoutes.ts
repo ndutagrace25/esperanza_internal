@@ -19,6 +19,13 @@ router.get(
   expenseController.getUnpaidSummary
 );
 
+// Only DIRECTOR role can record payments in bulk
+router.post(
+  "/payments/bulk",
+  authorize("DIRECTOR"),
+  expenseController.recordBulkPayments
+);
+
 // Get expense by expense number (before /:id route to avoid conflicts)
 router.get(
   "/expense-number/:expenseNumber",

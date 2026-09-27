@@ -9,7 +9,10 @@ import type {
 } from "@prisma/client";
 import { createLog } from "./systemLogService.js";
 import { findMatchingCategory } from "./expenseCategoryService.js";
-import { sendExpenseNotificationEmail } from "../utils/email.js";
+import {
+  sendExpenseNotificationEmail,
+  sendBulkExpensePaymentEmail,
+} from "../utils/email.js";
 
 // Types
 export type CreateExpenseData = Omit<
@@ -64,10 +67,14 @@ export type CreateExpenseFromJobExpenseData = {
   clientName?: string | null;
 };
 
+/** PAID = fully paid; UNPAID = not fully paid and not rejected/cancelled */
+export type ExpensePaymentFilter = "PAID" | "UNPAID";
+
 export type PaginationOptions = {
   page?: number;
   limit?: number;
   status?: ExpenseStatus;
+  paymentStatus?: ExpensePaymentFilter;
   categoryId?: string;
   jobCardId?: string;
   submittedById?: string;
@@ -97,6 +104,9 @@ const UNPAID_EXPENSE_STATUSES: ExpenseStatus[] = [
 /** Statuses from which a payment can be recorded against an expense */
 const PAYABLE_EXPENSE_STATUSES: ExpenseStatus[] = ["APPROVED", "PARTIALLY_PAID"];
 
+/** Statuses that must be approved before a bulk payment can be recorded */
+const APPROVABLE_EXPENSE_STATUSES: ExpenseStatus[] = ["DRAFT", "PENDING"];
+
 export type RecordPaymentData = {
   amount: Prisma.Decimal | number | string;
   paymentMethod?: PaymentMethod | null;
@@ -105,7 +115,27 @@ export type RecordPaymentData = {
   notes?: string | null;
 };
 
-export type ExpensePaymentWithRecordedBy = ExpensePayment & {
+export const MAX_BULK_PAYMENT_ITEMS = 100;
+
+export type BulkPaymentItem = {
+  expenseId: string;
+  /** Omit to pay the full remaining balance */
+  amount?: Prisma.Decimal | number | string | null;
+};
+
+type BulkPaidItem = {
+  expenseId: string;
+  amount: Prisma.Decimal;
+  /** True when the expense was approved as part of this bulk payment */
+  approved: boolean;
+};
+
+export type BulkPaymentResult = {
+  succeeded: Expense[];
+  failed: { expenseId: string; expenseNumber: string; error: string }[];
+};
+
+export type ExpensePaymentWithRecordedBy =ExpensePayment & {
   recordedBy: {
     id: string;
     firstName: string;
@@ -354,6 +384,76 @@ async function notifyDirectorsAboutExpense(
 }
 
 /**
+ * Send one summary email to directors for a bulk payment (fire and forget)
+ */
+async function notifyDirectorsAboutBulkPayment(
+  paid: BulkPaidItem[],
+  failed: BulkPaymentResult["failed"],
+  data: Omit<RecordPaymentData, "amount">,
+  recordedById?: string
+): Promise<void> {
+  try {
+    if (paid.length === 0) return;
+
+    const directorEmails = await getDirectorEmails();
+    if (directorEmails.length === 0) {
+      console.log("No directors found to notify about bulk payment");
+      return;
+    }
+
+    const [expenses, recordedBy] = await Promise.all([
+      prisma.expense.findMany({
+        where: { id: { in: paid.map((p) => p.expenseId) } },
+        select: {
+          id: true,
+          expenseNumber: true,
+          description: true,
+          status: true,
+          jobCard: {
+            select: {
+              jobNumber: true,
+              client: { select: { companyName: true } },
+            },
+          },
+          submittedBy: { select: { firstName: true, lastName: true } },
+        },
+      }),
+      recordedById
+        ? prisma.employee.findUnique({
+            where: { id: recordedById },
+            select: { firstName: true, lastName: true },
+          })
+        : null,
+    ]);
+    const expensesById = new Map(expenses.map((e) => [e.id, e]));
+
+    await sendBulkExpensePaymentEmail(
+      {
+        payments: paid.flatMap(({ expenseId, amount, approved }) => {
+          const expense = expensesById.get(expenseId);
+          return expense
+            ? [{ ...expense, amountPaid: Number(amount), approved }]
+            : [];
+        }),
+        failed,
+        paymentMethod: data.paymentMethod ?? null,
+        referenceNumber: data.referenceNumber ?? null,
+        notes: data.notes ?? null,
+        recordedBy,
+      },
+      directorEmails
+    );
+
+    console.log(
+      `Bulk payment notification sent to ${directorEmails.length} director(s)`
+    );
+  } catch (error) {
+    // Log but don't throw - email failures shouldn't break the main flow
+    console.error("Failed to send bulk payment notification:", error);
+  }
+}
+
+/**
  * Find all expenses with pagination and filters
  */
 export async function findAll(
@@ -368,6 +468,17 @@ export async function findAll(
 
   if (options.status) {
     where.status = options.status;
+  }
+  if (options.paymentStatus) {
+    // AND-ed so it narrows (rather than overrides) an explicit status filter
+    where.AND = [
+      {
+        status:
+          options.paymentStatus === "PAID"
+            ? "PAID"
+            : { in: UNPAID_EXPENSE_STATUSES },
+      },
+    ];
   }
   if (options.categoryId) {
     where.categoryId = options.categoryId;
@@ -1177,7 +1288,8 @@ async function syncJobCardFromExpenseStatus(
 export async function update(
   id: string,
   data: UpdateExpenseData,
-  performedBy?: string
+  performedBy?: string,
+  options: { notify?: boolean } = {}
 ): Promise<Expense> {
   // Get old data for logging
   const oldExpense = await prisma.expense.findUnique({
@@ -1273,7 +1385,9 @@ export async function update(
   }
 
   // Send notification to directors (fire and forget)
-  notifyDirectorsAboutExpense(expense.id, "updated");
+  if (options.notify !== false) {
+    notifyDirectorsAboutExpense(expense.id, "updated");
+  }
 
   return expense;
 }
@@ -1288,7 +1402,8 @@ export async function updateStatus(
   additionalData?: {
     approvedById?: string;
     rejectionReason?: string;
-  }
+  },
+  options: { notify?: boolean } = {}
 ): Promise<Expense> {
   const updateData: UpdateExpenseData = { status };
 
@@ -1304,7 +1419,7 @@ export async function updateStatus(
     }
   }
 
-  return update(id, updateData, performedBy);
+  return update(id, updateData, performedBy, options);
 }
 
 /**
@@ -1396,9 +1511,16 @@ export async function deleteByJobExpenseId(
 export async function approve(
   id: string,
   approvedById: string,
-  performedBy?: string
+  performedBy?: string,
+  options: { notify?: boolean } = {}
 ): Promise<Expense> {
-  return updateStatus(id, "APPROVED", performedBy, { approvedById });
+  return updateStatus(
+    id,
+    "APPROVED",
+    performedBy,
+    { approvedById },
+    options
+  );
 }
 
 /**
@@ -1408,7 +1530,8 @@ export async function approve(
 export async function recordPayment(
   expenseId: string,
   data: RecordPaymentData,
-  recordedById?: string
+  recordedById?: string,
+  options: { notify?: boolean } = {}
 ): Promise<Expense> {
   const expense = await prisma.expense.findUnique({ where: { id: expenseId } });
   if (!expense) {
@@ -1498,9 +1621,133 @@ export async function recordPayment(
     );
   }
 
-  notifyDirectorsAboutExpense(expenseId, "updated");
+  if (options.notify !== false) {
+    notifyDirectorsAboutExpense(expenseId, "updated");
+  }
 
   return updatedExpense;
+}
+
+/**
+ * Record payments against several expenses in one go.
+ * Draft and pending expenses are approved first, then paid.
+ * Every item is validated up front (nothing is recorded if any item is invalid),
+ * then each payment goes through recordPayment sequentially so the ledger entry,
+ * status change, logs, job card sync and notifications behave exactly as for a
+ * single payment, except directors get one summary email instead of one per
+ * expense. Sequential processing matters: a job card only completes once
+ * all of its expenses are PAID, which requires earlier payments to be committed.
+ */
+export async function recordBulkPayments(
+  items: BulkPaymentItem[],
+  data: Omit<RecordPaymentData, "amount">,
+  recordedById?: string
+): Promise<BulkPaymentResult> {
+  if (items.length === 0) {
+    throw new Error("Select at least one expense to pay");
+  }
+  if (items.length > MAX_BULK_PAYMENT_ITEMS) {
+    throw new Error(
+      `Cannot record more than ${MAX_BULK_PAYMENT_ITEMS} payments at once`
+    );
+  }
+
+  const ids = items.map((item) => item.expenseId);
+  if (new Set(ids).size !== ids.length) {
+    throw new Error("Each expense can only appear once in a bulk payment");
+  }
+
+  const expenses = await prisma.expense.findMany({
+    where: { id: { in: ids } },
+  });
+  const expensesById = new Map(expenses.map((e) => [e.id, e]));
+
+  const errors: string[] = [];
+  const resolved: { expense: Expense; amount: Prisma.Decimal }[] = [];
+
+  for (const item of items) {
+    const expense = expensesById.get(item.expenseId);
+    if (!expense) {
+      errors.push(`Expense ${item.expenseId} not found`);
+      continue;
+    }
+    if (
+      !PAYABLE_EXPENSE_STATUSES.includes(expense.status) &&
+      !APPROVABLE_EXPENSE_STATUSES.includes(expense.status)
+    ) {
+      errors.push(
+        `${expense.expenseNumber}: cannot pay an expense that is ${expense.status.toLowerCase().replace("_", " ")}`
+      );
+      continue;
+    }
+
+    const remaining = expense.amount.sub(expense.amountPaid);
+    // No amount means "pay the full remaining balance"
+    const amount =
+      item.amount === undefined || item.amount === null || item.amount === ""
+        ? remaining
+        : new Prisma.Decimal(item.amount);
+
+    if (amount.lessThanOrEqualTo(0)) {
+      errors.push(`${expense.expenseNumber}: amount must be greater than zero`);
+      continue;
+    }
+    if (amount.greaterThan(remaining)) {
+      errors.push(
+        `${expense.expenseNumber}: amount exceeds remaining balance of ${remaining.toString()}`
+      );
+      continue;
+    }
+
+    resolved.push({ expense, amount });
+  }
+
+  if (errors.length > 0) {
+    throw new Error(errors.join("; "));
+  }
+
+  const result: BulkPaymentResult = { succeeded: [], failed: [] };
+  const paid: BulkPaidItem[] = [];
+
+  for (const { expense, amount } of resolved) {
+    let approved = false;
+    try {
+      // Draft/pending expenses go through the normal approval first
+      // (sets approver, syncs the job card) exactly as a manual approval would
+      if (APPROVABLE_EXPENSE_STATUSES.includes(expense.status)) {
+        if (!recordedById) {
+          throw new Error("An approver is required to approve this expense");
+        }
+        await approve(expense.id, recordedById, recordedById, {
+          notify: false,
+        });
+        approved = true;
+      }
+
+      const updated = await recordPayment(
+        expense.id,
+        { ...data, amount },
+        recordedById,
+        { notify: false }
+      );
+      result.succeeded.push(updated);
+      paid.push({ expenseId: expense.id, amount, approved });
+    } catch (error) {
+      // Only reachable if the expense changed between validation and payment.
+      // If approval succeeded but payment failed, the expense stays APPROVED.
+      const message =
+        error instanceof Error ? error.message : "Failed to record payment";
+      result.failed.push({
+        expenseId: expense.id,
+        expenseNumber: expense.expenseNumber,
+        error: approved ? `Approved, but payment failed: ${message}` : message,
+      });
+    }
+  }
+
+  notifyDirectorsAboutBulkPayment(paid, result.failed, data, recordedById);
+
+  return result;
 }
 
 /**

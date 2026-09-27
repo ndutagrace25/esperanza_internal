@@ -587,3 +587,194 @@ export async function sendExpenseNotificationEmail(
     text,
   });
 }
+/**
+ * Sends a single summary email to directors after a bulk expense payment
+ */
+export async function sendBulkExpensePaymentEmail(
+  summary: {
+    payments: {
+      expenseNumber: string;
+      description: string;
+      amountPaid: number;
+      status: string;
+      /** Approved as part of this bulk payment */
+      approved: boolean;
+      jobCard: { jobNumber: string; client: { companyName: string } } | null;
+      submittedBy: { firstName: string; lastName: string } | null;
+    }[];
+    failed: { expenseNumber: string; error: string }[];
+    paymentMethod: string | null;
+    referenceNumber: string | null;
+    notes: string | null;
+    recordedBy: { firstName: string; lastName: string } | null;
+  },
+  directorEmails: string[]
+): Promise<void> {
+  if (directorEmails.length === 0 || summary.payments.length === 0) {
+    return;
+  }
+
+  const formatCurrency = (amount: number): string => {
+    return `KES ${amount.toLocaleString("en-KE", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  };
+
+  const total = summary.payments.reduce((sum, p) => sum + p.amountPaid, 0);
+  const count = summary.payments.length;
+  const approvedCount = summary.payments.filter((p) => p.approved).length;
+  const countLabel = `${count} expense${count === 1 ? "" : "s"}`;
+  const recordedByName = summary.recordedBy
+    ? `${summary.recordedBy.firstName} ${summary.recordedBy.lastName}`
+    : "Unknown";
+  const method = summary.paymentMethod
+    ? summary.paymentMethod.replace(/_/g, " ")
+    : "—";
+
+  const statusColor = (status: string): string =>
+    ({ PARTIALLY_PAID: "#14b8a6", PAID: "#22c55e" })[status] || "#64748b";
+
+  const submitterName = (p: (typeof summary.payments)[number]): string =>
+    p.submittedBy ? `${p.submittedBy.firstName} ${p.submittedBy.lastName}` : "—";
+
+  const rows = summary.payments
+    .map(
+      (p) => `
+              <tr>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">
+                  <strong>${p.expenseNumber}</strong>
+                  ${p.jobCard ? `<div style="font-size: 12px; color: #666;">${p.jobCard.jobNumber} - ${p.jobCard.client.companyName}</div>` : ""}
+                  <div style="font-size: 12px; color: #666;">${p.description}</div>
+                </td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">${submitterName(p)}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right; white-space: nowrap;">${formatCurrency(p.amountPaid)}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">
+                  <span class="status-badge" style="background-color: ${statusColor(p.status)};">${p.status.replace(/_/g, " ")}</span>
+                  ${p.approved ? `<div style="font-size: 12px; color: #3b82f6; margin-top: 4px;">Approved in this payment</div>` : ""}
+                </td>
+              </tr>`
+    )
+    .join("");
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 700px; margin: 0 auto; padding: 20px; }
+        .header { background-color: #059669; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; background-color: #f9f9f9; }
+        .info-box { background-color: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 15px; margin: 15px 0; }
+        .info-row { margin: 10px 0; }
+        .info-label { font-weight: bold; color: #666; display: block; font-size: 12px; text-transform: uppercase; }
+        .info-value { font-size: 16px; margin-top: 2px; }
+        .amount { font-size: 24px; font-weight: bold; color: #059669; }
+        .status-badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: bold; color: white; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+        .failed-box { background-color: #fef2f2; border: 1px solid #ef4444; border-radius: 4px; padding: 10px; margin: 10px 0; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>Bulk Expense Payment Recorded</h1>
+        </div>
+        <div class="content">
+          <p>Dear Director,</p>
+          <p>Payments have been recorded against ${countLabel} in a single bulk payment.${approvedCount > 0 ? ` ${approvedCount} of them ${approvedCount === 1 ? "was" : "were"} pending and approved as part of this payment.` : ""}</p>
+
+          <div class="info-box">
+            <div style="text-align: center; padding: 0 0 15px; border-bottom: 1px solid #eee; margin-bottom: 15px;">
+              <div class="info-label">Total Paid</div>
+              <div class="amount">${formatCurrency(total)}</div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+              <div class="info-row">
+                <span class="info-label">Payment Method</span>
+                <span class="info-value">${method}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Reference #</span>
+                <span class="info-value">${summary.referenceNumber || "—"}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Recorded By</span>
+                <span class="info-value">${recordedByName}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Expenses Paid</span>
+                <span class="info-value">${count}</span>
+              </div>
+            </div>
+            ${summary.notes ? `
+            <div class="info-row" style="margin-top: 15px;">
+              <span class="info-label">Notes</span>
+              <span class="info-value">${summary.notes}</span>
+            </div>
+            ` : ""}
+          </div>
+
+          <div class="info-box" style="padding: 0; overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+              <thead>
+                <tr style="background-color: #f3f4f6; text-align: left;">
+                  <th style="padding: 8px;">Expense</th>
+                  <th style="padding: 8px;">Submitted By</th>
+                  <th style="padding: 8px; text-align: right;">Paid</th>
+                  <th style="padding: 8px;">Status</th>
+                </tr>
+              </thead>
+              <tbody>${rows}
+              </tbody>
+            </table>
+          </div>
+
+          ${summary.failed.length > 0 ? `
+          <div class="failed-box">
+            <strong>Not recorded:</strong>
+            <ul style="margin: 5px 0;">
+              ${summary.failed.map((f) => `<li>${f.expenseNumber}: ${f.error}</li>`).join("")}
+            </ul>
+          </div>
+          ` : ""}
+        </div>
+        <div class="footer">
+          <p>This is an automated message from Esperanza Internal System. Please do not reply.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const text = `
+    Bulk Expense Payment Recorded
+
+    Payments have been recorded against ${countLabel}.
+
+    - Total Paid: ${formatCurrency(total)}
+    - Payment Method: ${method}
+    - Reference #: ${summary.referenceNumber || "—"}
+    - Recorded By: ${recordedByName}
+    ${summary.notes ? `- Notes: ${summary.notes}` : ""}
+
+    Expenses:
+${summary.payments
+  .map(
+    (p) =>
+      `    - ${p.expenseNumber}${p.jobCard ? ` (${p.jobCard.jobNumber})` : ""}: ${formatCurrency(p.amountPaid)} - ${p.status.replace(/_/g, " ")}${p.approved ? " (approved in this payment)" : ""} - ${submitterName(p)}`
+  )
+  .join("\n")}
+${summary.failed.length > 0 ? `\n    Not recorded:\n${summary.failed.map((f) => `    - ${f.expenseNumber}: ${f.error}`).join("\n")}` : ""}
+  `;
+
+  await sendEmail({
+    to: directorEmails,
+    subject: `Bulk Expense Payment: ${countLabel} - ${formatCurrency(total)}`,
+    html,
+    text,
+  });
+}

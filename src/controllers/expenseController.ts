@@ -37,11 +37,23 @@ export async function getAll(req: Request, res: Response): Promise<void> {
     const status = parseQueryParam(req.query["status"]) as
       | ExpenseStatus
       | undefined;
+    const paymentStatus = parseQueryParam(req.query["paymentStatus"]);
     const categoryId = parseQueryParam(req.query["categoryId"]);
     const submittedById = parseQueryParam(req.query["submittedById"]);
     const startDate = parseDateParam(req.query["startDate"]);
     const endDate = parseDateParam(req.query["endDate"]);
     const search = parseQueryParam(req.query["search"]);
+
+    if (
+      paymentStatus !== undefined &&
+      paymentStatus !== "PAID" &&
+      paymentStatus !== "UNPAID"
+    ) {
+      res.status(400).json({
+        error: "paymentStatus must be either PAID or UNPAID",
+      });
+      return;
+    }
 
     // Validate pagination parameters
     if (page !== undefined && page < 1) {
@@ -60,6 +72,7 @@ export async function getAll(req: Request, res: Response): Promise<void> {
       ...(page !== undefined && { page }),
       ...(limit !== undefined && { limit }),
       ...(status && { status }),
+      ...(paymentStatus && { paymentStatus }),
       ...(categoryId && { categoryId }),
       ...(submittedById && { submittedById }),
       ...(startDate && { startDate }),
@@ -395,6 +408,55 @@ export async function recordPayment(
     console.error("Error recording expense payment:", error);
     const errorMessage =
       error instanceof Error ? error.message : "Failed to record payment";
+    res.status(400).json({ error: errorMessage });
+  }
+}
+
+/**
+ * Record payments against several approved expenses at once
+ */
+export async function recordBulkPayments(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const { items, paymentMethod, referenceNumber, paymentDate, notes } =
+      req.body;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      res.status(400).json({ error: "Select at least one expense to pay" });
+      return;
+    }
+    if (
+      items.some(
+        (item: unknown) =>
+          !item ||
+          typeof item !== "object" ||
+          typeof (item as { expenseId?: unknown }).expenseId !== "string"
+      )
+    ) {
+      res.status(400).json({ error: "Each item requires an expenseId" });
+      return;
+    }
+
+    const result = await expenseService.recordBulkPayments(
+      items.map((item: { expenseId: string; amount?: string | number }) => ({
+        expenseId: item.expenseId,
+        amount: item.amount ?? null,
+      })),
+      {
+        paymentMethod: paymentMethod || null,
+        referenceNumber: referenceNumber || null,
+        notes: notes || null,
+        ...(paymentDate && { paymentDate: new Date(paymentDate) }),
+      },
+      req.employee?.id
+    );
+    res.status(201).json(result);
+  } catch (error) {
+    console.error("Error recording bulk expense payments:", error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Failed to record payments";
     res.status(400).json({ error: errorMessage });
   }
 }
