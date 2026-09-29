@@ -147,6 +147,8 @@ model ClientSubscription {
   code        String
   /// Base API URL, e.g. https://backend.example.co.ke/api
   apiBaseUrl  String                   @map("api_base_url")
+  /// M-Pesa service base URL for this client, e.g. https://mpesa.example.co.ke/api
+  mpesaBaseUrl String?                 @map("mpesa_base_url")
   expiryDate  DateTime                 @map("expiry_date")
   status      ClientSubscriptionStatus @default(active)
   createdAt   DateTime                 @default(now())

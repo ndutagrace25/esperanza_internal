@@ -3,7 +3,7 @@ import * as clientSubscriptionController from "../controllers/clientSubscription
 
 const router = Router();
 
-// GET /api/client/:code -> { apiBaseUrl } — no authentication required.
+// GET /api/client/:code -> { apiBaseUrl, mpesaBaseUrl, clientName } — no authentication required.
 router.get("/client/:code", clientSubscriptionController.getApiBaseUrlByCode);
 
 export default router;

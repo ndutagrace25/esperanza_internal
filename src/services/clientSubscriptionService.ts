@@ -6,6 +6,7 @@ export type CreateClientSubscriptionData = {
   clientId: string;
   code: string;
   apiBaseUrl: string;
+  mpesaBaseUrl?: string | null;
   expiryDate: string | Date;
   status?: "active" | "expired" | "suspended" | "cancelled";
 };
@@ -14,6 +15,7 @@ export type UpdateClientSubscriptionData = Partial<{
   clientId: string;
   code: string;
   apiBaseUrl: string;
+  mpesaBaseUrl: string | null;
   expiryDate: string | Date;
   status: "active" | "expired" | "suspended" | "cancelled";
 }>;
@@ -39,6 +41,13 @@ const clientSelect = {
 
 function normalizeApiBaseUrl(url: string): string {
   return url.trim().replace(/\/$/, "");
+}
+
+/** Empty/blank values clear the M-Pesa base URL. */
+function normalizeMpesaBaseUrl(url: string | null | undefined): string | null {
+  if (url == null) return null;
+  const normalized = normalizeApiBaseUrl(url);
+  return normalized || null;
 }
 
 function normalizeSubscriptionCode(code: string): string {
@@ -198,12 +207,14 @@ export async function findById(id: string) {
 }
 
 /**
- * Public lookup by company code — returns only the API base URL and client name.
- * No login required.
+ * Public lookup by company code — returns only the API base URL, M-Pesa base
+ * URL and client name. No login required.
  */
-export async function findApiBaseUrlByCode(
-  code: string
-): Promise<{ apiBaseUrl: string; clientName: string } | null> {
+export async function findApiBaseUrlByCode(code: string): Promise<{
+  apiBaseUrl: string;
+  mpesaBaseUrl: string | null;
+  clientName: string;
+} | null> {
   const normalizedCode = normalizeSubscriptionCode(code);
   if (!normalizedCode) {
     return null;
@@ -213,6 +224,7 @@ export async function findApiBaseUrlByCode(
     where: { code: normalizedCode },
     select: {
       apiBaseUrl: true,
+      mpesaBaseUrl: true,
       client: { select: { companyName: true } },
     },
     orderBy: { createdAt: "desc" },
@@ -224,6 +236,7 @@ export async function findApiBaseUrlByCode(
 
   return {
     apiBaseUrl: subscription.apiBaseUrl,
+    mpesaBaseUrl: subscription.mpesaBaseUrl,
     clientName: subscription.client.companyName,
   };
 }
@@ -250,6 +263,7 @@ export async function create(
       clientId: data.clientId,
       code,
       apiBaseUrl,
+      mpesaBaseUrl: normalizeMpesaBaseUrl(data.mpesaBaseUrl),
       expiryDate: parseExpiryDate(data.expiryDate),
       status: data.status ?? "active",
     },
@@ -297,6 +311,9 @@ export async function update(
   if (data.code != null) updateData.code = normalizeSubscriptionCode(data.code);
   if (data.apiBaseUrl != null) {
     updateData.apiBaseUrl = normalizeApiBaseUrl(data.apiBaseUrl);
+  }
+  if (data.mpesaBaseUrl !== undefined) {
+    updateData.mpesaBaseUrl = normalizeMpesaBaseUrl(data.mpesaBaseUrl);
   }
   if (data.expiryDate != null) {
     updateData.expiryDate = parseExpiryDate(data.expiryDate);
