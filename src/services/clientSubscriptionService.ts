@@ -241,6 +241,25 @@ export async function findApiBaseUrlByCode(code: string): Promise<{
   };
 }
 
+/**
+ * Ventura systems on the licensing update pick up renewals themselves at their
+ * next check-in (POST /api/licence/check-in), and ignore this push. It's kept
+ * only for systems not updated yet, so a failed push no longer blocks saving.
+ */
+async function pushLicenseExpiryBestEffort(
+  subscription: { apiBaseUrl: string; code: string },
+  licenseExpiryDate: string | Date
+) {
+  try {
+    await pushLicenseExpiryToClientSystem(subscription, licenseExpiryDate);
+  } catch (error) {
+    console.warn(
+      `[Licence] Legacy expiry push to ${subscription.code} failed (licensed systems update on check-in):`,
+      error instanceof Error ? error.message : error
+    );
+  }
+}
+
 export async function create(
   data: CreateClientSubscriptionData,
   performedBy?: string
@@ -256,7 +275,7 @@ export async function create(
   const code = normalizeSubscriptionCode(data.code);
   const apiBaseUrl = normalizeApiBaseUrl(data.apiBaseUrl);
 
-  await pushLicenseExpiryToClientSystem({ apiBaseUrl, code }, data.expiryDate);
+  await pushLicenseExpiryBestEffort({ apiBaseUrl, code }, data.expiryDate);
 
   const subscription = await prisma.clientSubscription.create({
     data: {
@@ -317,6 +336,9 @@ export async function update(
   }
   if (data.expiryDate != null) {
     updateData.expiryDate = parseExpiryDate(data.expiryDate);
+    // Setting the expiry by hand counts as reviewing a date taken from the hotel
+    updateData.expiryAdjustedFrom = null;
+    updateData.expiryAdjustedAt = null;
   }
   if (data.status != null) updateData.status = data.status;
 
@@ -359,7 +381,7 @@ export async function renew(
     throw new Error("Client subscription not found");
   }
 
-  await pushLicenseExpiryToClientSystem(subscription, data.licenseExpiryDate);
+  await pushLicenseExpiryBestEffort(subscription, data.licenseExpiryDate);
 
   const newExpiry = parseExpiryDate(data.licenseExpiryDate);
 
@@ -368,6 +390,8 @@ export async function renew(
     data: {
       expiryDate: newExpiry,
       status: "active",
+      expiryAdjustedFrom: null,
+      expiryAdjustedAt: null,
     },
     include: {
       client: { select: clientSelect },

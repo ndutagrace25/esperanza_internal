@@ -76,4 +76,9 @@ export const env = {
   SMS_API_KEY: process.env["SMS_API_KEY"] || "",
   SMS_SHORTCODE: process.env["SMS_SHORTCODE"] || "",
   SMS_PARTNER_ID: process.env["SMS_PARTNER_ID"] || "",
+
+  // Ventura licensing: Ed25519 private key (PKCS#8 PEM, base64-encoded on one
+  // line) used to sign client licences. Generate with `npm run license:keygen`.
+  // Never commit it; the matching public key is built into the Ventura backend.
+  LICENSE_PRIVATE_KEY: process.env["LICENSE_PRIVATE_KEY"] || "",
 } as const;

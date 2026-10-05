@@ -154,6 +154,31 @@ model ClientSubscription {
   createdAt   DateTime                 @default(now())
   updatedAt   DateTime                 @updatedAt
 
+  // Ventura licensing (see services/licenseService.ts). The Ventura backend
+  // checks in with its installation id and gets a licence signed with
+  // LICENSE_PRIVATE_KEY.
+  /// Installation this licence is bound to (set on first check-in, or by support)
+  installationId          String?   @map("installation_id")
+  /// One-time key support gives a client to move the licence to a new server
+  activationKey           String?   @unique @map("activation_key")
+  /// Last licence issued (signed token)
+  licenseToken            String?   @map("license_token")
+  licenseIssuedAt         DateTime? @map("license_issued_at")
+  lastCheckInAt           DateTime? @map("last_check_in_at")
+  lastCheckInIp           String?   @map("last_check_in_ip")
+  lastCheckInVersion      String?   @map("last_check_in_version")
+  /// Another installation tried to use this licence (possible copy)
+  conflictInstallationId  String?   @map("conflict_installation_id")
+  conflictAt              DateTime? @map("conflict_at")
+  /// First check-in: the hotel was already on a later expiry than ours, so we
+  /// kept theirs (expiryDate) - this is our old date, for support to review
+  expiryAdjustedFrom      DateTime? @map("expiry_adjusted_from")
+  expiryAdjustedAt        DateTime? @map("expiry_adjusted_at")
+  /// The licence moved automatically to a new installation (the old one had
+  /// stopped checking in, e.g. its server lost the data volume)
+  previousInstallationId  String?   @map("previous_installation_id")
+  reboundAt               DateTime? @map("rebound_at")
+
   @@map("client_subscriptions")
   @@index([clientId])
   @@index([status])
