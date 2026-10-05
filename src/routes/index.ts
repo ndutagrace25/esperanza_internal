@@ -13,6 +13,7 @@ import clientIntegrationRoutes from "./clientIntegrationRoutes.js";
 import clientSubscriptionRoutes from "./clientSubscriptionRoutes.js";
 import smsRoutes from "./smsRoutes.js";
 import publicRoutes from "./publicRoutes.js";
+import salesAppRoutes from "./salesAppRoutes.js";
 import { authenticate } from "../middleware/auth.js";
 
 const router = Router();
@@ -20,6 +21,8 @@ const router = Router();
 // Public routes (no authentication required)
 router.use("/auth", authRoutes);
 router.use("/", publicRoutes);
+// Sales app (own sales-person login inside)
+router.use("/sales-app", salesAppRoutes);
 
 // Protected routes (authentication required)
 router.use("/employees", authenticate, employeeRoutes);

@@ -441,6 +441,18 @@ model SalesPerson {
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
 
+  // Sales app login (services/salesAppAuthService.ts): email + 4-digit PIN.
+  // First login and forgotten PIN go through a temporary PIN sent by email and SMS.
+  pinHash           String?   @map("pin_hash")
+  pinSetAt          DateTime? @map("pin_set_at")
+  tempPinHash       String?   @map("temp_pin_hash")
+  tempPinExpiresAt  DateTime? @map("temp_pin_expires_at")
+  tempPinSentAt     DateTime? @map("temp_pin_sent_at")
+  tempPinAttempts   Int       @default(0) @map("temp_pin_attempts")
+  failedPinAttempts Int       @default(0) @map("failed_pin_attempts")
+  pinLockedUntil    DateTime? @map("pin_locked_until")
+  lastLoginAt       DateTime? @map("last_login_at")
+
   sales       Sale[]            @relation("SaleCommissionSalesPerson")
 
   @@map("sales_people")

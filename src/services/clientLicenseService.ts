@@ -6,7 +6,7 @@ const LOGGED_DEVICE_ID = "a9kvkn";
 /**
  * Normalize Kenyan mobile to 254XXXXXXXXX for SMS API.
  */
-function normalizeMobile(phone: string | null | undefined): string | null {
+export function normalizeMobile(phone: string | null | undefined): string | null {
   if (!phone || !phone.trim()) return null;
   const digits = phone.replace(/\D/g, "");
   if (digits.length === 9 && digits.startsWith("7")) return `254${digits}`;
