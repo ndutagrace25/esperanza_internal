@@ -96,7 +96,7 @@ export async function findAll(options: ChequeLeafListOptions = {}) {
     }),
   };
 
-  const [total, data, issuedTotal] = await Promise.all([
+  const [total, data, issuedTotal, summary] = await Promise.all([
     prisma.chequeLeaf.count({ where }),
     prisma.chequeLeaf.findMany({
       where,
@@ -111,6 +111,7 @@ export async function findAll(options: ChequeLeafListOptions = {}) {
           where: { ...where, status: "ISSUED" },
           _sum: { amount: true },
         }),
+    getSummary(),
   ]);
 
   return {
@@ -123,6 +124,23 @@ export async function findAll(options: ChequeLeafListOptions = {}) {
     },
     // Sum of issued (not cancelled) cheques matching the current filters
     issuedAmountTotal: issuedTotal._sum.amount ?? new Prisma.Decimal(0),
+    summary,
+  };
+}
+
+/** Whole-register totals, ignoring search and filters. */
+export async function getSummary() {
+  const groups = await prisma.chequeLeaf.groupBy({
+    by: ["status"],
+    _count: { _all: true },
+    _sum: { amount: true },
+  });
+  const issued = groups.find((g) => g.status === "ISSUED");
+  const cancelled = groups.find((g) => g.status === "CANCELLED");
+  return {
+    issuedCount: issued?._count._all ?? 0,
+    issuedAmount: issued?._sum.amount ?? new Prisma.Decimal(0),
+    cancelledCount: cancelled?._count._all ?? 0,
   };
 }
 
