@@ -13,12 +13,19 @@ const ADVANTA_BULK_BATCH_SIZE = 20;
 /** Placeholder replaced with each recipient's name, e.g. "Dear {name}, Merry Christmas!" */
 export const NAME_PLACEHOLDER = "{name}";
 
-export type BroadcastRecipientType = "CLIENT" | "EMPLOYEE";
+export type BroadcastRecipientType = "CLIENT" | "EMPLOYEE" | "OTHER";
+
+/** A recipient typed in by the director who is not a client or employee. */
+export type OtherRecipient = {
+  name: string;
+  phone: string;
+};
 
 export type BroadcastInput = {
   message: string;
   clientIds: string[];
   employeeIds: string[];
+  otherRecipients: OtherRecipient[];
   performedBy?: string | undefined;
 };
 
@@ -93,6 +100,15 @@ export async function getRecipients() {
       hasValidPhone: !!normalizeMobile(e.phone),
     })),
   };
+}
+
+/**
+ * Strict check for manually entered numbers: must normalize to a Kenyan
+ * mobile (2547XXXXXXXX or 2541XXXXXXXX). normalizeMobile alone is lenient.
+ */
+export function toValidKenyanMobile(phone: string): string | null {
+  const mobile = normalizeMobile(phone);
+  return mobile && /^254[17]\d{8}$/.test(mobile) ? mobile : null;
 }
 
 function isAdvantaSuccess(res: BulkSmsResponseItem): boolean {
@@ -177,6 +193,14 @@ export async function sendBroadcast(
   for (const e of employees) {
     addRecipient("EMPLOYEE", e.id, e.firstName, normalizeMobile(e.phone));
   }
+  input.otherRecipients.forEach((o, idx) => {
+    addRecipient(
+      "OTHER",
+      `other-${idx}`,
+      o.name.trim(),
+      toValidKenyanMobile(o.phone)
+    );
+  });
 
   const failed: BroadcastFailure[] = [];
   let sent = 0;
@@ -212,7 +236,8 @@ export async function sendBroadcast(
   }
 
   const result: BroadcastResult = {
-    requested: clientIds.length + employeeIds.length,
+    requested:
+      clientIds.length + employeeIds.length + input.otherRecipients.length,
     sent,
     failed,
     skipped,
@@ -228,6 +253,7 @@ export async function sendBroadcast(
         message: input.message,
         clientCount: clientIds.length,
         employeeCount: employeeIds.length,
+        otherRecipients: input.otherRecipients,
         sent,
         failed: failed.length,
         skipped: skipped.length,

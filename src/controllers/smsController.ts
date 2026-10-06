@@ -150,12 +150,18 @@ export async function getRecipients(
 
 /**
  * POST /sms/broadcast
- * Body: { message: string; clientIds?: string[]; employeeIds?: string[] }
+ * Body: { message: string; clientIds?: string[]; employeeIds?: string[];
+ *         otherRecipients?: Array<{ name: string; phone: string }> }
  * Message may contain {name}, replaced with each recipient's name.
  */
 export async function broadcast(req: Request, res: Response): Promise<void> {
   try {
-    const { message, clientIds = [], employeeIds = [] } = req.body ?? {};
+    const {
+      message,
+      clientIds = [],
+      employeeIds = [],
+      otherRecipients = [],
+    } = req.body ?? {};
 
     if (!message || typeof message !== "string" || message.trim() === "") {
       res.status(400).json({ error: "message is required" });
@@ -169,7 +175,30 @@ export async function broadcast(req: Request, res: Response): Promise<void> {
         .json({ error: "clientIds and employeeIds must be arrays of IDs" });
       return;
     }
-    if (clientIds.length === 0 && employeeIds.length === 0) {
+    if (!Array.isArray(otherRecipients)) {
+      res.status(400).json({ error: "otherRecipients must be an array" });
+      return;
+    }
+    for (let i = 0; i < otherRecipients.length; i++) {
+      const o = otherRecipients[i];
+      if (!o || typeof o.name !== "string" || !o.name.trim()) {
+        res
+          .status(400)
+          .json({ error: `otherRecipients[${i}].name is required` });
+        return;
+      }
+      if (typeof o.phone !== "string" || !bulkSmsService.toValidKenyanMobile(o.phone)) {
+        res.status(400).json({
+          error: `${o.name.trim()}: "${o.phone}" is not a valid Kenyan mobile number`,
+        });
+        return;
+      }
+    }
+    if (
+      clientIds.length === 0 &&
+      employeeIds.length === 0 &&
+      otherRecipients.length === 0
+    ) {
       res.status(400).json({ error: "Select at least one recipient" });
       return;
     }
@@ -178,6 +207,12 @@ export async function broadcast(req: Request, res: Response): Promise<void> {
       message: message.trim(),
       clientIds,
       employeeIds,
+      otherRecipients: otherRecipients.map(
+        (o: { name: string; phone: string }) => ({
+          name: o.name.trim(),
+          phone: o.phone.trim(),
+        })
+      ),
       performedBy: req.employee?.id,
     });
 
