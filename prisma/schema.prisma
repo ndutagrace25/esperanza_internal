@@ -48,6 +48,7 @@ model Employee {
   salesCommissionPaymentsRecorded SaleCommissionPayment[] @relation("SaleCommissionPaymentsRecorded")
   saleAmountHistoryChanges SaleAmountHistory[] @relation("SaleAmountHistoryChanges")
   salesPersonProfiles SalesPerson[]
+  chequeLeavesRecorded ChequeLeaf[] @relation("ChequeLeavesRecorded")
 
   @@map("employees")
 }
@@ -644,4 +645,29 @@ enum PaymentMethod {
   OTHER
 }
 
+enum ChequeLeafStatus {
+  ISSUED
+  CANCELLED
+}
 
+/// One cheque leaf written by the company. Numbers run 1, 2, 3... (shown as 000001)
+/// and are assigned by the server; cancelled leaves keep their number.
+model ChequeLeaf {
+  id              String           @id @default(cuid())
+  chequeNumber    Int              @unique @map("cheque_number")
+  payee           String
+  amount          Decimal          @db.Decimal(12, 2)
+  description     String?
+  chequeDate      DateTime         @default(now()) @map("cheque_date")
+  status          ChequeLeafStatus @default(ISSUED)
+  cancelledReason String?          @map("cancelled_reason")
+  cancelledAt     DateTime?        @map("cancelled_at")
+  recordedById    String?          @map("recorded_by_id")
+  recordedBy      Employee?        @relation("ChequeLeavesRecorded", fields: [recordedById], references: [id])
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  @@map("cheque_leaves")
+  @@index([chequeDate])
+  @@index([status])
+}

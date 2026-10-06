@@ -12,6 +12,7 @@ import expenseRoutes from "./expenseRoutes.js";
 import clientIntegrationRoutes from "./clientIntegrationRoutes.js";
 import clientSubscriptionRoutes from "./clientSubscriptionRoutes.js";
 import smsRoutes from "./smsRoutes.js";
+import chequeLeafRoutes from "./chequeLeafRoutes.js";
 import publicRoutes from "./publicRoutes.js";
 import salesAppRoutes from "./salesAppRoutes.js";
 import { authenticate } from "../middleware/auth.js";
@@ -37,5 +38,6 @@ router.use("/job-cards", authenticate, jobCardRoutes);
 router.use("/sales", authenticate, saleRoutes);
 router.use("/sales-people", authenticate, salesPersonRoutes);
 router.use("/expenses", authenticate, expenseRoutes);
+router.use("/cheque-leaves", authenticate, chequeLeafRoutes);
 
 export default router;
