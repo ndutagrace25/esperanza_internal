@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import * as smsService from "../services/smsService.js";
+import * as bulkSmsService from "../services/bulkSmsService.js";
 import { sendPaymentReminders } from "../services/paymentReminderService.js";
 
 /**
@@ -126,6 +127,65 @@ export async function testPaymentReminders(
       error instanceof Error
         ? error.message
         : "Failed to run payment reminders";
+    res.status(500).json({ error: message });
+  }
+}
+
+/**
+ * GET /sms/recipients
+ * Returns all non-archived clients and active employees for the bulk SMS page.
+ */
+export async function getRecipients(
+  _req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const result = await bulkSmsService.getRecipients();
+    res.json(result);
+  } catch (error) {
+    console.error("Error fetching SMS recipients:", error);
+    res.status(500).json({ error: "Failed to fetch SMS recipients" });
+  }
+}
+
+/**
+ * POST /sms/broadcast
+ * Body: { message: string; clientIds?: string[]; employeeIds?: string[] }
+ * Message may contain {name}, replaced with each recipient's name.
+ */
+export async function broadcast(req: Request, res: Response): Promise<void> {
+  try {
+    const { message, clientIds = [], employeeIds = [] } = req.body ?? {};
+
+    if (!message || typeof message !== "string" || message.trim() === "") {
+      res.status(400).json({ error: "message is required" });
+      return;
+    }
+    const isStringArray = (v: unknown): v is string[] =>
+      Array.isArray(v) && v.every((x) => typeof x === "string");
+    if (!isStringArray(clientIds) || !isStringArray(employeeIds)) {
+      res
+        .status(400)
+        .json({ error: "clientIds and employeeIds must be arrays of IDs" });
+      return;
+    }
+    if (clientIds.length === 0 && employeeIds.length === 0) {
+      res.status(400).json({ error: "Select at least one recipient" });
+      return;
+    }
+
+    const result = await bulkSmsService.sendBroadcast({
+      message: message.trim(),
+      clientIds,
+      employeeIds,
+      performedBy: req.employee?.id,
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error("Error sending broadcast SMS:", error);
+    const message =
+      error instanceof Error ? error.message : "Failed to send broadcast SMS";
     res.status(500).json({ error: message });
   }
 }

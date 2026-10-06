@@ -34,7 +34,10 @@ export type SendBulkSmsBody = {
 };
 
 export type BulkSmsResponseItem = {
-  "respose-code": number;
+  // Advanta spells this "respose-code" on some endpoints and "response-code" on others,
+  // and may return it as a number or a string.
+  "respose-code"?: number | string;
+  "response-code"?: number | string;
   "response-description": string;
   mobile?: string;
   messageid?: number;

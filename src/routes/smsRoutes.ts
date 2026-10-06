@@ -13,6 +13,12 @@ router.post("/send-bulk", authorize("DIRECTOR"), smsController.sendBulk);
 // Get SMS account balance
 router.get("/balance", authorize("DIRECTOR"), smsController.getBalance);
 
+// Recipients (clients + employees) for the bulk SMS page
+router.get("/recipients", authorize("DIRECTOR"), smsController.getRecipients);
+
+// Send one message to selected clients/employees (e.g. holiday greetings)
+router.post("/broadcast", authorize("DIRECTOR"), smsController.broadcast);
+
 // Test payment reminder cron (triggers same logic as scheduled job)
 router.post(
   "/test-payment-reminders",
