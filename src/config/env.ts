@@ -76,6 +76,10 @@ export const env = {
   SMS_API_KEY: process.env["SMS_API_KEY"] || "",
   SMS_SHORTCODE: process.env["SMS_SHORTCODE"] || "",
   SMS_PARTNER_ID: process.env["SMS_PARTNER_ID"] || "",
+  // Directors are alerted by the daily balance check when credit drops below this
+  SMS_LOW_BALANCE_THRESHOLD: process.env["SMS_LOW_BALANCE_THRESHOLD"]
+    ? Number(process.env["SMS_LOW_BALANCE_THRESHOLD"])
+    : 100,
 
   // Ventura licensing: Ed25519 private key (PKCS#8 PEM, base64-encoded on one
   // line) used to sign client licences. Generate with `npm run license:keygen`.

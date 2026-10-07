@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import * as smsService from "../services/smsService.js";
 import * as bulkSmsService from "../services/bulkSmsService.js";
 import { sendPaymentReminders } from "../services/paymentReminderService.js";
+import { checkSmsBalanceAndNotify } from "../services/smsBalanceService.js";
 
 /**
  * POST /sms/send
@@ -97,6 +98,34 @@ export async function getBalance(_req: Request, res: Response): Promise<void> {
     console.error("Error fetching SMS balance:", error);
     const message =
       error instanceof Error ? error.message : "Failed to fetch SMS balance";
+    res.status(500).json({ error: message });
+  }
+}
+
+/**
+ * POST /sms/test-balance-alert
+ * Run the daily low SMS credit check now (same as cron).
+ * Query: threshold (optional) to override the alert level, e.g. 5000 to force an alert.
+ */
+export async function testBalanceAlert(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const thresholdParam = req.query["threshold"] as string | undefined;
+    const threshold =
+      thresholdParam !== undefined ? Number(thresholdParam) : undefined;
+    if (threshold !== undefined && (isNaN(threshold) || threshold < 0)) {
+      res.status(400).json({ error: "threshold must be a non-negative number" });
+      return;
+    }
+
+    const result = await checkSmsBalanceAndNotify(threshold);
+    res.json(result);
+  } catch (error) {
+    console.error("Error running SMS balance check:", error);
+    const message =
+      error instanceof Error ? error.message : "Failed to check SMS balance";
     res.status(500).json({ error: message });
   }
 }

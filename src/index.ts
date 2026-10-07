@@ -4,6 +4,7 @@ import { env } from "./config/env.js";
 import routes from "./routes/index.js";
 import { startPaymentReminderCron } from "./jobs/paymentReminderCron.js";
 import { startPaymentExtensionReminderCron } from "./jobs/paymentExtensionReminderCron.js";
+import { startSmsBalanceCron } from "./jobs/smsBalanceCron.js";
 
 const app = express();
 
@@ -43,4 +44,6 @@ app.listen(env.PORT, () => {
   startPaymentReminderCron();
   // Payment extension reminder: daily at 8:00 AM for sales with extension due in 1–3 days
   startPaymentExtensionReminderCron();
+  // SMS credit check: daily at 8:00 AM, alerts directors when credit is low
+  startSmsBalanceCron();
 });

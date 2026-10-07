@@ -52,7 +52,10 @@ export type BulkSmsApiResponse = {
 };
 
 export type GetBalanceApiResponse = {
-  balance?: number;
+  "response-code"?: number | string;
+  /** Remaining credit as a decimal string, e.g. "1750.00" */
+  credit?: string;
+  "partner-id"?: string;
   [key: string]: unknown;
 };
 
