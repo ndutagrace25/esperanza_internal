@@ -13,6 +13,7 @@ import clientIntegrationRoutes from "./clientIntegrationRoutes.js";
 import clientSubscriptionRoutes from "./clientSubscriptionRoutes.js";
 import smsRoutes from "./smsRoutes.js";
 import chequeLeafRoutes from "./chequeLeafRoutes.js";
+import standbyRoutes from "./standbyRoutes.js";
 import publicRoutes from "./publicRoutes.js";
 import salesAppRoutes from "./salesAppRoutes.js";
 import { authenticate } from "../middleware/auth.js";
@@ -39,5 +40,6 @@ router.use("/sales", authenticate, saleRoutes);
 router.use("/sales-people", authenticate, salesPersonRoutes);
 router.use("/expenses", authenticate, expenseRoutes);
 router.use("/cheque-leaves", authenticate, chequeLeafRoutes);
+router.use("/standby", authenticate, standbyRoutes);
 
 export default router;

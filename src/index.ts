@@ -5,6 +5,7 @@ import routes from "./routes/index.js";
 import { startPaymentReminderCron } from "./jobs/paymentReminderCron.js";
 import { startPaymentExtensionReminderCron } from "./jobs/paymentExtensionReminderCron.js";
 import { startSmsBalanceCron } from "./jobs/smsBalanceCron.js";
+import { startStandbyReminderCron } from "./jobs/standbyReminderCron.js";
 
 const app = express();
 
@@ -46,4 +47,6 @@ app.listen(env.PORT, () => {
   startPaymentExtensionReminderCron();
   // SMS credit check: daily at 8:00 AM, alerts directors when credit is low
   startSmsBalanceCron();
+  // Weekend standby SMS: every Saturday at 9:00 AM
+  startStandbyReminderCron();
 });

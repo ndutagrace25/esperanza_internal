@@ -49,6 +49,10 @@ model Employee {
   saleAmountHistoryChanges SaleAmountHistory[] @relation("SaleAmountHistoryChanges")
   salesPersonProfiles SalesPerson[]
   chequeLeavesRecorded ChequeLeaf[] @relation("ChequeLeavesRecorded")
+  standbyRotationMember StandbyRotationMember? @relation("StandbyRotationMember")
+  standbyWeekends         StandbyWeekend[] @relation("StandbyWeekendAssigned")
+  standbyWeekendsOriginal StandbyWeekend[] @relation("StandbyWeekendOriginal")
+  standbyWeekendsChanged  StandbyWeekend[] @relation("StandbyWeekendChangedBy")
 
   @@map("employees")
 }
@@ -670,4 +674,38 @@ model ChequeLeaf {
   @@map("cheque_leaves")
   @@index([chequeDate])
   @@index([status])
+}
+
+/// Ordered list of people who take turns on weekend standby (1, 2, 3, 1, 2, 3...).
+model StandbyRotationMember {
+  id         String   @id @default(cuid())
+  employeeId String   @unique @map("employee_id")
+  employee   Employee @relation("StandbyRotationMember", fields: [employeeId], references: [id], onDelete: Cascade)
+  position   Int
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("standby_rotation_members")
+}
+
+/// Who is on standby for one weekend. weekendStart is the Saturday (Africa/Nairobi date).
+/// When a director changes the person, originalEmployeeId keeps whose turn it was,
+/// so the rotation after this weekend is not shifted.
+model StandbyWeekend {
+  id                 String    @id @default(cuid())
+  weekendStart       DateTime  @unique @map("weekend_start") @db.Date
+  employeeId         String    @map("employee_id")
+  employee           Employee  @relation("StandbyWeekendAssigned", fields: [employeeId], references: [id])
+  originalEmployeeId String?   @map("original_employee_id")
+  originalEmployee   Employee? @relation("StandbyWeekendOriginal", fields: [originalEmployeeId], references: [id])
+  changeReason       String?   @map("change_reason")
+  changedById        String?   @map("changed_by_id")
+  changedBy          Employee? @relation("StandbyWeekendChangedBy", fields: [changedById], references: [id])
+  changedAt          DateTime? @map("changed_at")
+  reminderSentAt     DateTime? @map("reminder_sent_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  @@map("standby_weekends")
+  @@index([employeeId])
 }
